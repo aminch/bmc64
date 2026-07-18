@@ -12,6 +12,8 @@ if [ ! -n "$ARM_VERSION" ]; then
 	ARM_VERSION="7.3.1"
 fi
 
+export PATH="$ARM_HOME/bin:$PATH"
+
 CIRCLE_PUBLIC_INCLUDES="-I$CIRCLE_HOME/include -I$CIRCLE_HOME/libs/circle/include -I$CIRCLE_HOME/libs/circle/addon"
 
 
@@ -143,6 +145,15 @@ echo "I don't know what to do for $BOARD"
 exit
 fi
 
+cd $SRC_DIR/third_party/circle-stdlib/libs/circle
+./makeall --nosample clean
+if [ "$?" != "0" ]
+then
+       exit
+fi
+
+cd $SRC_DIR/third_party/circle-stdlib
+
 # For pi0, we turn on our HID report throttle
 if [ "$BOARD" = "pi0" ]
 then
@@ -170,6 +181,22 @@ fi
 cd $SRC_DIR/third_party/circle-stdlib/libs/circle/addon/linux
 make clean
 make
+if [ "$?" != "0" ]
+then
+       exit
+fi
+
+cd $SRC_DIR/third_party/circle-stdlib/libs/circle/addon/wlan
+make clean
+make
+if [ "$?" != "0" ]
+then
+       exit
+fi
+
+cd $SRC_DIR/third_party/circle-stdlib/libs/circle/addon/wlan/hostap/wpa_supplicant
+make -f Makefile.circle clean
+make -f Makefile.circle
 if [ "$?" != "0" ]
 then
        exit
