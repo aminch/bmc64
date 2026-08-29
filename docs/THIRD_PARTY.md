@@ -12,9 +12,9 @@ See [`third_party/vice-3.3/`](../third_party/vice-3.3/) for the source incorpora
 
 ## circle-stdlib
 
-BMC64 uses the [circle-stdlib project](https://codeberg.org/larchcone/circle-stdlib).
+BMC64 uses the [circle-stdlib project](https://codeberg.org/larchcone/circle-stdlib), v20.
 
-See [`third_party/circle-stdlib/`](../third_party/circle-stdlib/) for the version used by BMC64 and its accompanying copyright and license information.
+See [`third_party/circle-stdlib/`](https://github.com/smuehlst/circle-stdlib/tree/v20) for the version used by BMC64 and its accompanying copyright and license information.
 
 ## Plus4Emu
 
