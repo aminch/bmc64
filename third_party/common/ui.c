@@ -39,6 +39,7 @@
 #include "joy.h"
 #include "kbd.h"
 #include "menu.h"
+#include "menu_text_layout.h"
 #include "font.h"
 #include "menu_timing.h"
 
@@ -142,6 +143,11 @@ static int ui_key_ticks_repeats;
 static int ui_key_ticks_repeats_next;
 
 static void ui_action(long action);
+static int ui_keyboard_mapping = KEYBOARD_MAPPING_SYM;
+
+void ui_set_keyboard_mapping(int mapping) {
+  ui_keyboard_mapping = mapping;
+}
 
 static int keyboard_shift = 0;
 
@@ -336,12 +342,10 @@ static void ui_key_pressed(long key) {
   }
 
   if (menu_cursor_item[current_menu]->type == TEXTFIELD) {
-    if (key == KEYCODE_Comma) {
-      ui_type_char(',');
-      return;
-    }
-    if (key == KEYCODE_Period) {
-      ui_type_char('.');
+    char ch = menu_text_layout_key_to_char(key, keyboard_shift,
+                        ui_keyboard_mapping);
+    if (ch != '\0') {
+      ui_type_char(ch);
       return;
     }
   }
@@ -392,20 +396,14 @@ static void ui_key_pressed(long key) {
     else
       ch = 'a' + key - KEYCODE_a;
     ui_type_char(ch);
-  } else if (key >= KEYCODE_1 && key <= KEYCODE_9) {
-    char ch = '1' + key - KEYCODE_1;
-    ui_type_char(ch);
-  } else if (key == KEYCODE_0) {
-    ui_type_char('0');
-  } else if (key == KEYCODE_Dash) {
-    if (keyboard_shift)
-      ui_type_char('_');
-    else
-      ui_type_char('-');
-  } else if (key == KEYCODE_Period) {
-    ui_type_char('.');
   } else if (key == KEYCODE_Backspace) {
     ui_type_char('\b');
+  } else {
+    char ch = menu_text_layout_key_to_char(key, keyboard_shift,
+                        ui_keyboard_mapping);
+    if (ch != '\0') {
+      ui_type_char(ch);
+    }
   }
 }
 

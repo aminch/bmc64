@@ -775,6 +775,7 @@ void emux_add_keyboard_options(struct menu_item* parent) {
   keyboard_mapping_item->choice_ints[KEYBOARD_MAPPING_MAXI] = KBD_INDEX_USERPOS;
   strcpy(keyboard_mapping_item->choices[KEYBOARD_MAPPING_PETSCIIBOARD], "PETSCIIBOARD");
   keyboard_mapping_item->choice_ints[KEYBOARD_MAPPING_PETSCIIBOARD] = KBD_INDEX_USERSYM;
+  ui_set_keyboard_mapping(keyboard_mapping_item->value);
 }
 
 // NOTES: 0xd400 is normally not an option in VICE for the 2nd SID but
@@ -1223,6 +1224,7 @@ int emux_handle_menu_change(struct menu_item* item) {
       else if (item->value == KEYBOARD_MAPPING_PETSCIIBOARD) {
          resources_set_string("KeymapUserSymFile", "rpi_petsciiboard_sym.vkm");
       }
+      ui_set_keyboard_mapping(item->value);
       resources_set_int("KeymapIndex", item->choice_ints[item->value]);
       return 1;
     case MENU_DRIVE_TRUE_EMULATION:
@@ -1310,6 +1312,12 @@ int emux_handle_loaded_setting(char *name, char* value_str, int value) {
 }
 
 void emux_load_settings_done(void) {
+  if (keyboard_mapping_item != NULL) {
+    int keymap_index;
+    resources_get_int("KeymapIndex", &keymap_index);
+    keyboard_mapping_item->value = vice_keymap_index_to_bmc(keymap_index);
+    ui_set_keyboard_mapping(keyboard_mapping_item->value);
+  }
   emux_machine_load_settings_done();
 }
 
