@@ -629,7 +629,7 @@ static void videoFrameCallback(void *userData)
 
 static void load_keymap(void) {
   FILE *fp = NULL;
-  if (keyboard_mapping_item->value == KEYBOARD_MAPPING_POS) {
+   if (keyboard_mapping_item->value == KEYBOARD_MAPPING_POS) {
      fp = fopen("/PLUS4EMU/rpi_pos.vkm", "r");
   } else if (keyboard_mapping_item->value == KEYBOARD_MAPPING_MAXI) {
      fp = fopen("/PLUS4EMU/rpi_maxi_pos.vkm", "r");
@@ -1107,17 +1107,18 @@ void emux_add_tape_options(struct menu_item* parent) {
 
 void emux_add_keyboard_options(struct menu_item* parent) {
   keyboard_mapping_item = ui_menu_add_multiple_choice(
-      MENU_KEYBOARD_MAPPING, parent, "Mapping");
+     MENU_KEYBOARD_MAPPING, parent, "Mapping");
   keyboard_mapping_item->num_choices = 3;
 
   int tmp_value;
   keyboard_mapping_item->value = keyboard_mapping;
-  strcpy(keyboard_mapping_item->choices[KEYBOARD_MAPPING_SYM], "Symbolic");
-  strcpy(keyboard_mapping_item->choices[KEYBOARD_MAPPING_POS], "Positional");
-  strcpy(keyboard_mapping_item->choices[KEYBOARD_MAPPING_MAXI], "Maxi Positional");
+   strcpy(keyboard_mapping_item->choices[KEYBOARD_MAPPING_SYM], "Symbolic");
+   strcpy(keyboard_mapping_item->choices[KEYBOARD_MAPPING_POS], "Positional");
+   strcpy(keyboard_mapping_item->choices[KEYBOARD_MAPPING_MAXI], "Maxi Positional");
 
   // Do this for now in case we ever support this some day.
   keyboard_mapping_item->choice_disabled[KEYBOARD_MAPPING_SYM] = 1;
+   ui_set_keyboard_mapping(keyboard_mapping_item->value);
 }
 
 void emux_add_sound_options(struct menu_item* parent) {
@@ -1489,6 +1490,7 @@ int emux_handle_menu_change(struct menu_item* item) {
       Plus4VM_Reset(vm, 1);
       return 1;
     case MENU_KEYBOARD_MAPPING:
+         ui_set_keyboard_mapping(item->value);
       load_keymap();
       machine_kbd_init();
       return 1;
