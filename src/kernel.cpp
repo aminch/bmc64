@@ -57,18 +57,12 @@ static int vol_percent_to_vchiq(int percent) {
 // Real keyboard matrix states
 static bool kbdMatrixStates[8][8];
 // These for translating row/col scans into equivalent keycodes.
-#if defined(RASPI_PLUS4) | defined(RASPI_PLUS4EMU)
-static long kbdMatrixKeyCodes[8][8] = {
- {KEYCODE_Backspace,  KEYCODE_3,         KEYCODE_5, KEYCODE_7, KEYCODE_9, KEYCODE_Left,         KEYCODE_Up,           KEYCODE_1},
- {KEYCODE_Return,     KEYCODE_w,         KEYCODE_r, KEYCODE_y, KEYCODE_i, KEYCODE_p,            KEYCODE_Dash,         KEYCODE_BackQuote},
- {KEYCODE_BackSlash,  KEYCODE_a,         KEYCODE_d, KEYCODE_g, KEYCODE_j, KEYCODE_l,            KEYCODE_SingleQuote,  KEYCODE_Tab},
- {KEYCODE_F7,         KEYCODE_4,         KEYCODE_6, KEYCODE_8, KEYCODE_0, KEYCODE_Right,        KEYCODE_Down,         KEYCODE_2},
- {KEYCODE_F1,         KEYCODE_z,         KEYCODE_c, KEYCODE_b, KEYCODE_m, KEYCODE_Period,       KEYCODE_RightShift,   KEYCODE_Space},
- {KEYCODE_F3,         KEYCODE_s,         KEYCODE_f, KEYCODE_h, KEYCODE_k, KEYCODE_SemiColon,    KEYCODE_RightBracket, KEYCODE_LeftControl},
- {KEYCODE_F5,         KEYCODE_e,         KEYCODE_t, KEYCODE_u, KEYCODE_o, KEYCODE_LeftBracket,  KEYCODE_Equals,       KEYCODE_q},
- {KEYCODE_Insert,     KEYCODE_LeftShift, KEYCODE_x, KEYCODE_v, KEYCODE_n, KEYCODE_Comma,        KEYCODE_Slash,        KEYCODE_Escape},
-};
-#else
+// NOTE: This table matches the physical labels of a real C64 keyboard.
+// On the Plus4/C16 core, the real CRSR L/R and CRSR U/D switches are
+// given shift-awareness in ScanKeyboard() below (mirroring how a real
+// C64 keyboard produces 4 logical cursor directions from 2 switches)
+// rather than sacrificing the +/-/pound/CLR keys to stand in for the
+// missing cursor directions.
 static long kbdMatrixKeyCodes[8][8] = {
  {KEYCODE_Backspace, KEYCODE_3,         KEYCODE_5, KEYCODE_7, KEYCODE_9, KEYCODE_Dash,        KEYCODE_Insert,       KEYCODE_1},
  {KEYCODE_Return,    KEYCODE_w,         KEYCODE_r, KEYCODE_y, KEYCODE_i, KEYCODE_p,           KEYCODE_RightBracket, KEYCODE_BackQuote},
@@ -79,6 +73,12 @@ static long kbdMatrixKeyCodes[8][8] = {
  {KEYCODE_F5,        KEYCODE_e,         KEYCODE_t, KEYCODE_u, KEYCODE_o, KEYCODE_LeftBracket, KEYCODE_Delete,       KEYCODE_q},
  {KEYCODE_Down,      KEYCODE_LeftShift, KEYCODE_x, KEYCODE_v, KEYCODE_n, KEYCODE_Comma,       KEYCODE_Slash,        KEYCODE_Escape},
 };
+#if defined(RASPI_PLUS4) | defined(RASPI_PLUS4EMU)
+static bool emuLeftShift = false;
+static bool emuRightShift = false;
+// What we actually told the emulator for each contact, since shift
+// state can change while a cursor key is still being held down.
+static long kbdSentKeyCode[8][8];
 #endif
 static int kbdRestoreState;
 
@@ -957,9 +957,34 @@ void CKernel::ScanKeyboard() {
         // the handle functions directly in kbd.c so we can invoke the
         // same hotkey funcs.
         if (val == LOW && kbdMatrixStates[kbdPA][kbdPB] == HIGH) {
+#if defined(RASPI_PLUS4) | defined(RASPI_PLUS4EMU)
+          if (keycode == KEYCODE_LeftShift) {
+             emuLeftShift = true;
+          } else if (keycode == KEYCODE_RightShift) {
+             emuRightShift = true;
+          }
+          long sendCode = keycode;
+          if (keycode == KEYCODE_Right && (emuLeftShift || emuRightShift)) {
+             sendCode = KEYCODE_Left;
+          } else if (keycode == KEYCODE_Down && (emuLeftShift || emuRightShift)) {
+             sendCode = KEYCODE_Up;
+          }
+          kbdSentKeyCode[kbdPA][kbdPB] = sendCode;
+          emu_key_pressed(sendCode);
+#else
           emu_key_pressed(keycode);
+#endif
         } else if (val == HIGH && kbdMatrixStates[kbdPA][kbdPB] == LOW) {
+#if defined(RASPI_PLUS4) | defined(RASPI_PLUS4EMU)
+          if (keycode == KEYCODE_LeftShift) {
+             emuLeftShift = false;
+          } else if (keycode == KEYCODE_RightShift) {
+             emuRightShift = false;
+          }
+          emu_key_released(kbdSentKeyCode[kbdPA][kbdPB]);
+#else
           emu_key_released(keycode);
+#endif
         }
       }
       kbdMatrixStates[kbdPA][kbdPB] = val;
