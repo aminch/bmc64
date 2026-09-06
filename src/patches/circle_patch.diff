@@ -60,3 +60,14 @@ index 05fe2fab..cd375e9a 100644
  	{
  		m_nReportSize++;
  	}
+diff --git a/addon/fatfs/ffconf.h b/addon/fatfs/ffconf.h
+--- a/addon/fatfs/ffconf.h
++++ b/addon/fatfs/ffconf.h
+@@ -34,6 +34,6 @@
+ /* This option switches f_mkfs(). (0:Disable or 1:Enable) */
+ 
+ 
+-#define FF_USE_FASTSEEK	0
++#define FF_USE_FASTSEEK	1
+ /* This option switches fast seek feature. (0:Disable or 1:Enable) */
+

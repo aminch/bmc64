@@ -1,5 +1,12 @@
 ## 5.1.1 (pre-release)
   * Remove FD2000 and FD4000 from bootstat code for VIC20 and PLUS/4
+  * Support large CMD HD and IDE64 hard-disk images that do not fit in RAM
+    * Images over 32 MB now stream directly from the SD card instead of being
+      loaded whole into memory (which failed with "out of memory")
+    * FatFs fast seek is enabled so streamed access stays responsive
+    * Maximum image size is just under 2 GB (FAT32 / 32-bit file offsets);
+      larger images are refused at attach with a clear log message
+    * Smaller images (floppies, REU images, snapshots) are unchanged
 
 ## 5.1.0
   * Add missing CMD HD drive option for Plus/4, lost in the original backport

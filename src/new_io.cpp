@@ -71,6 +71,18 @@ struct _CIRCLE_DIR {
 // backing file. The caller's fsync() requests commit those writes to
 // the storage device. Seeking past the current file length is not
 // supported.
+//
+// STREAMED MODE (large images). A file whose size exceeds SLURP_MAX_BYTES
+// (or a smaller one whose RAM buffer cannot be allocated) is not slurped:
+// file.contents stays NULL and every _read/_write/_lseek goes straight to
+// FatFs (f_lseek + f_read/f_write), sector by sector. This lets a
+// multi-hundred-MiB CMD HD / IDE64 image attach on a Pi that has nowhere near
+// that much contiguous heap. FF_USE_FASTSEEK + a per-file cluster-link map
+// keep f_lseek O(1); a write that extends the file drops the map. Durability
+// matches the R/W slurp path: writes go through to the card immediately and
+// the caller's fsync() flushes them. Hard ceiling STREAM_MAX_BYTES (~2 GiB,
+// the newlib off_t / FatFs FSIZE_t limit); larger images are refused at open.
+// See docs/architecture/LARGE_DISK_IMAGE_SUPPORT.md.
 
 #define MAX_OPEN_FILES 10
 #define MAX_OPEN_DIRS 10
@@ -82,6 +94,21 @@ struct _CIRCLE_DIR {
 
 /* Initial size of the in-RAM buffer for a write-only file; grows by doubling. */
 #define WRITE_BUF_SIZE 1024
+
+/* Disk images at or below this size are slurped into RAM (fast RAM seeks, write
+   mirror). Larger images are "streamed": every _read/_write/_lseek goes straight
+   to FatFs sector-by-sector, so a multi-hundred-MiB CMD HD / IDE64 image no
+   longer needs a contiguous heap allocation it can never get on a Pi.
+   Chosen well above the 16 MiB maximum REU image and a ~17 MiB REU-state
+   snapshot, so every RAM-expansion image and every disk image that works today
+   keeps its current behaviour - only genuine mass-storage images stream.
+   See docs/architecture/LARGE_DISK_IMAGE_SUPPORT.md. */
+#define SLURP_MAX_BYTES (32u * 1024u * 1024u)
+
+/* Hard upper bound for any image. newlib off_t / _lseek are signed 32-bit and
+   FatFs FSIZE_t is 32-bit (no exFAT), so the stack cannot address >= 2 GiB.
+   Stay clear of INT_MAX. */
+#define STREAM_MAX_BYTES 0x7F000000u
 
 static const char *pattern = "*";
 
@@ -203,6 +230,8 @@ struct CircleFile {
   int mode; // remembers mode this file was opened under
   int written_to; // at least one write was performed on this file
   int fopen_called; // f_open was called and thus f_close needs to be called
+  int streamed; // 1 = no RAM buffer; _read/_write/_lseek go straight to FatFs
+  DWORD *cltbl; // fast-seek cluster-link map for a streamed file, or nullptr
 };
 
 struct CircleDir {
@@ -321,8 +350,9 @@ static CircleDir *FindCircleDirFromDIR(DIR *dir) {
   return nullptr;
 }
 
-// Returns non zero value on any failure. Any memory will be
-// freed on error and file.contents nulled.
+// Returns 0 on success, -1 on I/O error, -2 if the RAM buffer could not be
+// allocated (the caller may fall back to streamed mode instead of failing).
+// Any memory is freed on error and file.contents nulled.
 static int slurp_file(CircleFile &file, int by_lseek) {
   (void)by_lseek;
   if (file.contents == nullptr) {
@@ -345,7 +375,7 @@ static int slurp_file(CircleFile &file, int by_lseek) {
 
     file.contents = (char *)malloc(size);
     if (file.contents == nullptr) {
-       return -1;
+       return -2;
     }
     file.allocated = (int)size;
 
@@ -374,6 +404,54 @@ static int slurp_file(CircleFile &file, int by_lseek) {
 #endif
   }
   return 0;
+}
+
+// Release a streamed file's fast-seek cluster map (if any) and detach it from
+// the FIL so FatFs stops consulting freed memory.
+static void stream_drop_cltbl(CircleFile &file) {
+#if FF_USE_FASTSEEK
+  file.file.cltbl = nullptr;
+#endif
+  if (file.cltbl) {
+    free(file.cltbl);
+    file.cltbl = nullptr;
+  }
+}
+
+// Put an already-f_open'd file into streamed mode: no RAM buffer, all I/O goes
+// straight to FatFs. Seeds file.size from the on-disk size and builds a
+// fast-seek cluster-link map so f_lseek does not walk the whole FAT chain on
+// every sector access. The map is only valid while the cluster chain is static;
+// a write that extends the file drops it (see _write).
+static void stream_setup(CircleFile &file) {
+  file.streamed = 1;
+  file.size = (unsigned)f_size(&file.file);
+
+#if FF_USE_FASTSEEK
+  // A contiguous image needs ~6 entries; start at 64 DWORDs (256 B) and grow
+  // once if FatFs reports it needs more. Give up past 4096 entries (~2000
+  // fragments) - seeks then fall back to the FAT-chain walk, still correct.
+  DWORD n = 64;
+  for (int attempt = 0; attempt < 2; attempt++) {
+    DWORD *t = (DWORD *)realloc(file.cltbl, n * sizeof(DWORD));
+    if (t == nullptr) {
+      break;
+    }
+    file.cltbl = t;
+    file.cltbl[0] = n;
+    file.file.cltbl = file.cltbl;
+    FRESULT r = f_lseek(&file.file, CREATE_LINKMAP);
+    if (r == FR_OK) {
+      return;
+    }
+    if (r == FR_NOT_ENOUGH_CORE && file.cltbl[0] > n && file.cltbl[0] <= 4096) {
+      n = file.cltbl[0];
+      continue;
+    }
+    break;
+  }
+  stream_drop_cltbl(file);
+#endif
 }
 
 extern "C" int _open(char *file, int flags, int mode) {
@@ -426,13 +504,34 @@ extern "C" int _open(char *file, int flags, int mode) {
     newFile.allocated = 0;
     newFile.mode = masked_flags;
     newFile.written_to = 0;
+    newFile.streamed = 0;
+    newFile.cltbl = nullptr;
     strcpy(newFile.fname, circlePath.path);
 
-    // When file is opened O_RDWR, slurp it into memory.
+    // When a file is opened O_RDWR, decide how to back it now: a small image is
+    // slurped into RAM; one too large to slurp is streamed straight from FatFs.
+    // (O_RDONLY defers this to the first _lseek; O_WRONLY always buffers.)
+    // See docs/architecture/LARGE_DISK_IMAGE_SUPPORT.md.
     if (masked_flags == O_RDWR) {
-       if (slurp_file(newFile, 0)) {
-          errno = ENFILE;
+       unsigned sz = (unsigned)f_size(&newFile.file);
+       if (sz >= STREAM_MAX_BYTES) {
+          logm("_open: image too large to address (>= 2 GiB)\n");
+          f_close(&newFile.file);
+          errno = EFBIG;
           return -1;
+       }
+       if (sz > SLURP_MAX_BYTES) {
+          stream_setup(newFile);
+       } else {
+          int r = slurp_file(newFile, 0);
+          if (r == -2) {
+             // Could not allocate the RAM copy - stream it rather than fail.
+             stream_setup(newFile);
+          } else if (r != 0) {
+             f_close(&newFile.file);
+             errno = ENFILE;
+             return -1;
+          }
        }
     }
 
@@ -476,13 +575,16 @@ extern "C" int _close(int fildes) {
   file.in_use = 0;
   file.written_to = 0;
   file.fopen_called = 0;
+  file.streamed = 0;
   file.fname[0] = '\0';
 
   if (file.contents) {
     free(file.contents);
     file.contents = nullptr;
-  } 
-  
+  }
+
+  stream_drop_cltbl(file);
+
   if (need_close && f_close(&file.file) != FR_OK) {
     errno = EIO;
     return -1;
@@ -533,6 +635,19 @@ extern "C" int _read(int fildes, char *ptr, int len) {
      // Assert file.FIL has been opened
      // else EBADF -1
 
+     if (file.streamed) {
+       // Writes and seeks move the FatFs file pointer independently, so a
+       // streamed read must reposition it. Skip when already there (sequential
+       // reads); with a cluster map a real seek is O(1).
+       if (file.position >= file.size) {
+         io_stats_read(0, 0);
+         return 0; // at or past EOF - do not let f_lseek stretch the chain
+       }
+       if (f_tell(&file.file) != file.position) {
+         f_lseek(&file.file, file.position);
+       }
+     }
+
      // Read data from the file
      if (f_read(&file.file, ptr, len, &num_read) != FR_OK) {
        errno = EIO;
@@ -581,6 +696,29 @@ extern "C" int _write(int fildes, char *ptr, int len) {
 
   // Keep the RAM cache coherent with the on-disk image.
   file.written_to = 1;
+
+  // Streamed file: write straight through to FatFs, no RAM buffer. The emulated
+  // drive / VICE fsync() calls persist this to the card per sector, so the
+  // power-loss window is one unsynced sector (same as the slurp write mirror).
+  if (file.streamed) {
+     unsigned int num_written = 0;
+     if (f_lseek(&file.file, file.position) != FR_OK ||
+         f_write(&file.file, ptr, len, &num_written) != FR_OK ||
+         num_written != static_cast<unsigned int>(len)) {
+       errno = EIO;
+       return -1;
+     }
+     file.position += len;
+     if (file.position > file.size) {
+        // The file grew: the cluster chain changed, so any fast-seek map is now
+        // stale. Drop it and fall back to FAT-chain-walk seeks for the rest of
+        // this handle's life. A pre-allocated fixed-size image never hits this.
+        file.size = file.position;
+        stream_drop_cltbl(file);
+     }
+     io_stats_write(file.mode, len);
+     return len;
+  }
 
   unsigned int write_position = file.position;
 
@@ -869,11 +1007,25 @@ extern "C" int _lseek(int fildes, int ptr, int dir) {
 
   io_stats_lseek();
 
-  if (file.mode == O_RDONLY) {
-    // Assert FIL has been opened
-    if (slurp_file(file, 1)) {
-       errno = EACCES;
-       return -1;
+  // First seek on an O_RDONLY file: pick a backing mode by size. Small files are
+  // slurped into RAM; files too large to slurp switch to streamed mode. O_RDWR
+  // already chose at open time; O_WRONLY seeks within its RAM buffer.
+  if (file.mode == O_RDONLY && file.contents == nullptr && !file.streamed) {
+    unsigned sz = (unsigned)f_size(&file.file);
+    if (sz >= STREAM_MAX_BYTES) {
+      errno = EFBIG;
+      return -1;
+    }
+    if (sz > SLURP_MAX_BYTES) {
+      stream_setup(file);
+    } else {
+      int r = slurp_file(file, 1);
+      if (r == -2) {
+        stream_setup(file);
+      } else if (r != 0) {
+        errno = EACCES;
+        return -1;
+      }
     }
   }
 
@@ -888,8 +1040,23 @@ extern "C" int _lseek(int fildes, int ptr, int dir) {
     return -1;
   }
 
-  // Bail
-  assert(file.position >= 0 && file.position <= file.size);
+  if (file.streamed) {
+    // A streamed O_RDWR file may seek to EOF to append; reject only the clearly
+    // invalid cases and let _write's own f_lseek stretch the chain. Seeking
+    // within the file positions the FatFs pointer now (O(1) with a cluster map)
+    // so a following _read lands in the right place; seeking at/past EOF does
+    // not, to avoid allocating clusters on a read-intent seek.
+    if ((int)file.position < 0) {
+      errno = EINVAL;
+      return -1;
+    }
+    if (file.position <= file.size && f_tell(&file.file) != file.position) {
+      f_lseek(&file.file, file.position);
+    }
+  } else {
+    // Bail
+    assert(file.position >= 0 && file.position <= file.size);
+  }
 
   return file.position;
 }
