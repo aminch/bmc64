@@ -1,5 +1,6 @@
 ## 5.1.1 (pre-release)
   * Remove FD2000 and FD4000 from bootstat code for VIC20 and PLUS/4
+  * Expose VICE REU settings for C128 machine
   * Support large CMD HD and IDE64 hard-disk images that do not fit in RAM
     * Images over 32 MB now stream directly from the SD card instead of being
       loaded whole into memory (which failed with "out of memory")
