@@ -860,6 +860,12 @@ static void show_font_test() {
   ui_menu_add_button(MENU_TEXT, root,
                      "> U+00FF: " "\xCE\x94" " " "\xE2\x82\xAC" " box");
   ui_menu_add_button(MENU_TEXT, root, "bad utf-8: \xFF\xFE box");
+
+  ui_menu_add_divider(root);
+  ui_menu_add_button(MENU_TEXT, root, "Type here:");
+  // Free-text field so the font can be exercised interactively. MENU_TEXT
+  // id -> no value-changed handler; the field just holds what is typed.
+  ui_menu_add_text_field_limit(MENU_TEXT, root, ">", "", 32);
 }
 
 #ifdef BMC64_IO_STATS
