@@ -12,6 +12,7 @@
     * Menu, status bar and OSD text now render with BESCII font instead of the active machine's CHARGEN ROM.
     * Menu text is now decoded from UTF-8 with a full Latin-1 character set.
     * Added a hidden font test screen, opened by pressing Enter on the last line of the About screen.
+  * Partial fix for #331, add basic mapping to allow keyboards to enter shifted characters in main menu.
 
 ## 5.1.0
   * Add missing CMD HD drive option for Plus/4, lost in the original backport
