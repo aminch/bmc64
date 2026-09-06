@@ -542,6 +542,8 @@ If you use a real C64 keyboard via GPIO Config #2, please be aware that BMPLUS4 
 
 F11 is the 40/80 Column Key for C128
 
+Note: You will also need to do a hard reset when changing modes.
+
 ## Mice
 
 BMC64 supports USB mice through the Joyports menu. Assign the mouse to the
