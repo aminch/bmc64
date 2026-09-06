@@ -694,6 +694,9 @@ extern int pot_x_low_value;
 extern int pot_y_high_value;
 extern int pot_y_low_value;
 
+// Returns the BMC64 version string (VERSION_STRING in menu.c).
+const char *bmc64_version_string(void);
+
 // Called at initialzation
 void build_menu(struct menu_item *root);
 

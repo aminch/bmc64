@@ -50,6 +50,8 @@
 extern "C" int circle_get_network_status(void);
 extern "C" int circle_get_network_ip_address(char *address,
                                              unsigned int address_size);
+// BMC64 version string; single source of truth is menu.c's VERSION_STRING.
+extern "C" const char *bmc64_version_string(void);
 
 #define WEBUI_LOG              "webui"
 #define WEBUI_PORT             80
@@ -61,8 +63,6 @@ extern "C" int circle_get_network_ip_address(char *address,
 
 // CNetSubSystem is created with this name in src/viceapp.cpp.
 #define WEBUI_HOSTNAME         "bmc64"
-// Keep in sync with VERSION_STRING in third_party/common/menu.c.
-#define WEBUI_VERSION          "5.1.1"
 
 #if defined(RASPI_C64)
 static const char *const kMachineName = "C64";
@@ -164,7 +164,8 @@ void HandleStatus(CSocket *socket) {
       "{\"hostname\":\"%s\",\"version\":\"%s\",\"machine\":\"%s\","
       "\"model\":\"%s\",\"ip\":\"%s\",\"net_status\":%d,\"net_text\":\"%s\","
       "\"uptime_secs\":%u,\"soc_temp_c\":%s,\"throttled\":%s}",
-      WEBUI_HOSTNAME, WEBUI_VERSION, kMachineName, model != 0 ? model : "",
+      WEBUI_HOSTNAME, bmc64_version_string(), kMachineName,
+      model != 0 ? model : "",
       have_ip ? ip : "", net_status, NetStatusText(net_status), uptime,
       soc_temp, throttled);
   if (length < 0 || (unsigned) length >= sizeof(body)) {

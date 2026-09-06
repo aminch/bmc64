@@ -69,6 +69,10 @@ extern void reboot(void);
 #define VARIANT_STRING ""
 #endif
 
+// Single source of truth for the BMC64 version, for code outside menu.c
+// (e.g. the web UI) that must not duplicate VERSION_STRING.
+const char *bmc64_version_string(void) { return VERSION_STRING; }
+
 #define DEFAULT_VICII_H_STRETCH 1200
 #define DEFAULT_VICII_V_STRETCH 1000
 
