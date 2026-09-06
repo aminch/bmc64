@@ -29,6 +29,7 @@
 #include "webui_fs.h"
 #include "webui_http.h"
 
+#include <circle/bcmpropertytags.h>
 #include <circle/logger.h>
 #include <circle/machineinfo.h>
 #include <circle/net/in.h>
@@ -109,6 +110,42 @@ const struct webui_asset *FindAsset(const char *path) {
   return 0;
 }
 
+// SoC temperature as a JSON number ("47.2") into out, or "null" if the
+// VideoCore mailbox query fails (e.g. QEMU).
+void SocTempField(char *out, unsigned out_size) {
+  CBcmPropertyTags tags;
+  TPropertyTagTemperature tag;
+  tag.nTemperatureId = TEMPERATURE_ID;
+  if (tags.GetTag(PROPTAG_GET_TEMPERATURE, &tag, sizeof(tag), sizeof(u32)) &&
+      tag.nValue > 0) {
+    snprintf(out, out_size, "%u.%01u", tag.nValue / 1000,
+             (tag.nValue % 1000) / 100);
+  } else {
+    strncpy(out, "null", out_size);
+    out[out_size - 1] = '\0';
+  }
+}
+
+// Raspberry Pi firmware "get_throttled" bitmask, forwarded raw and
+// decoded client side. These are independent conditions: bit 0/16
+// under-voltage (a 5V supply problem), bit 2/18 the ARM clock actually
+// being throttled (from under-voltage or the 85C hard thermal limit),
+// bit 1/17 the turbo frequency being capped, bit 3/19 the Pi 3B+
+// "soft" temp limit (config.txt temp_soft_limit, default 60C): a
+// partial throttle easing the ARM clock from 1.4GHz to 1.2GHz. Low
+// bits are "now", bits 16-19 "since boot".
+// "null" if the mailbox query is unavailable (e.g. QEMU).
+void ThrottledField(char *out, unsigned out_size) {
+  CBcmPropertyTags tags;
+  TPropertyTagSimple tag;
+  if (tags.GetTag(PROPTAG_GET_THROTTLED, &tag, sizeof(tag))) {
+    snprintf(out, out_size, "%lu", (unsigned long) tag.nValue);
+  } else {
+    strncpy(out, "null", out_size);
+    out[out_size - 1] = '\0';
+  }
+}
+
 void HandleStatus(CSocket *socket) {
   char ip[32];
   boolean have_ip = circle_get_network_ip_address(ip, sizeof(ip)) != 0;
@@ -116,14 +153,20 @@ void HandleStatus(CSocket *socket) {
   unsigned uptime = CTimer::Get()->GetUptime();
   const char *model = CMachineInfo::Get()->GetMachineName();
 
+  char soc_temp[16];
+  char throttled[16];
+  SocTempField(soc_temp, sizeof(soc_temp));
+  ThrottledField(throttled, sizeof(throttled));
+
   char body[512];
   int length = snprintf(
       body, sizeof(body),
       "{\"hostname\":\"%s\",\"version\":\"%s\",\"machine\":\"%s\","
       "\"model\":\"%s\",\"ip\":\"%s\",\"net_status\":%d,\"net_text\":\"%s\","
-      "\"uptime_secs\":%u}",
+      "\"uptime_secs\":%u,\"soc_temp_c\":%s,\"throttled\":%s}",
       WEBUI_HOSTNAME, WEBUI_VERSION, kMachineName, model != 0 ? model : "",
-      have_ip ? ip : "", net_status, NetStatusText(net_status), uptime);
+      have_ip ? ip : "", net_status, NetStatusText(net_status), uptime,
+      soc_temp, throttled);
   if (length < 0 || (unsigned) length >= sizeof(body)) {
     SendText(socket, 500, "Internal Server Error", "status encode error\n");
     return;

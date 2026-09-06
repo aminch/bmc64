@@ -41,6 +41,64 @@ function setConn(ok, text) {
   $("sys-state").textContent = text || (ok ? "System Online" : "Offline");
 }
 
+function renderTemp(t) {
+  const wrap = $("d-tempmeter");
+  if (t == null || isNaN(Number(t))) { wrap.hidden = true; return; }
+  t = Number(t);
+  const cls = t >= 80 ? "v-bad" : t >= 70 ? "v-warn" : "v-ok";
+  const val = $("d-temp");
+  val.textContent = t.toFixed(1) + " °C";
+  val.className = cls;
+  const bar = $("d-temp-bar");
+  bar.style.width = Math.max(0, Math.min(100, ((t - 30) / 60) * 100)) + "%";
+  bar.style.background =
+    t >= 80 ? "var(--red)" : t >= 70 ? "var(--amber)" : "var(--green)";
+  wrap.hidden = false;
+}
+
+// Raspberry Pi get_throttled bits. Bits 0-3 are the current state; bits
+// 16-19 latch "has happened since boot" and only clear on reboot, so
+// each is shown on its own row rather than mixed into the live value.
+const BIT_UNDERVOLT_NOW = 1 << 0;
+const BIT_FREQ_CAP_NOW = 1 << 1;
+const BIT_THROTTLED_NOW = 1 << 2;
+const BIT_SOFT_TEMP_NOW = 1 << 3;
+const BIT_UNDERVOLT_EVER = 1 << 16;
+const BIT_FREQ_CAP_EVER = 1 << 17;
+const BIT_THROTTLED_EVER = 1 << 18;
+const BIT_SOFT_TEMP_EVER = 1 << 19;
+
+// el gets "Yes (<detail>)" / "No"; bad rows use `cls`, "No" is always ok.
+function yesNo(id, bad, cls, hex, detail) {
+  const el = $(id);
+  el.textContent = bad ? ("Yes" + (detail ? " — " + detail : "")) : "No";
+  el.className = bad ? cls : "v-ok";
+  el.title = "get_throttled: 0x" + hex;
+}
+
+function renderThermalFlags(raw) {
+  const ids = ["d-uv", "d-uv-boot", "d-thr", "d-thr-boot"];
+  if (raw == null) {
+    ids.forEach((id) => { const e = $(id); e.textContent = "—"; e.className = ""; e.title = ""; });
+    return;
+  }
+  const b = Number(raw) >>> 0;
+  const hex = b.toString(16);
+
+  yesNo("d-uv", b & BIT_UNDERVOLT_NOW, "v-bad", hex);
+  yesNo("d-uv-boot", b & BIT_UNDERVOLT_EVER, "v-warn", hex);
+
+  let detail = "";
+  if (!(b & BIT_THROTTLED_NOW) && (b & BIT_FREQ_CAP_NOW)) detail = "turbo capped";
+  else if (!(b & BIT_THROTTLED_NOW) && (b & BIT_SOFT_TEMP_NOW)) detail = "1.2 GHz, warm";
+  yesNo("d-thr", b & (BIT_THROTTLED_NOW | BIT_FREQ_CAP_NOW | BIT_SOFT_TEMP_NOW),
+        (b & BIT_THROTTLED_NOW) ? "v-bad" : "v-warn", hex, detail);
+
+  yesNo("d-thr-boot",
+        b & (BIT_THROTTLED_EVER | BIT_FREQ_CAP_EVER | BIT_SOFT_TEMP_EVER),
+        "v-warn", hex);
+}
+
 function scheduleStatus(ms) {
   clearTimeout(pollTimer);
   pollTimer = null;
@@ -60,16 +118,14 @@ async function pollStatus() {
     $("sc-ip").textContent = s.ip || "—";
     $("sc-ver").textContent = s.version ? "v" + s.version : "—";
 
-    $("d-machine").textContent = s.machine || "—";
-    $("d-model").textContent = s.model || "—";
-    $("d-net").textContent = s.net_text || ("status " + s.net_status);
-    $("d-ip").textContent = s.ip || "—";
-    $("d-uptime").textContent = fmtUptime(s.uptime_secs);
+    renderTemp(s.soc_temp_c);
+    renderThermalFlags(s.throttled);
 
     $("i-host").textContent = s.hostname || "—";
     $("i-ip").textContent = s.ip || "—";
     $("i-machine").textContent = s.machine || "—";
     $("i-model").textContent = s.model || "—";
+    $("i-net").textContent = s.net_text || ("status " + s.net_status);
     $("i-ver").textContent = s.version ? "BMC64 v" + s.version : "—";
     $("i-uptime").textContent = fmtUptime(s.uptime_secs);
 
