@@ -1,3 +1,11 @@
+## 5.1.2 (pre-release)
+  * Add an optional LAN web UI (C64/C128, Network menu > "Web UI (reboot)")
+    * Off by default; requires networking to be enabled and a reboot to apply
+    * http://<bmc64-ip>/ shows machine status and has a Reboot button
+    * Read-only SD card file browser with per-file download
+    * Runs on the networking core only; no effect on the emulator when idle
+    * No authentication yet: only enable it on a trusted network
+
 ## 5.1.1 (pre-release)
   * Remove FD2000 and FD4000 from bootstat code for VIC20 and PLUS/4
   * Expose VICE REU settings for C128 machine

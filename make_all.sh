@@ -482,6 +482,21 @@ echo ==============================================================
 echo Link errors above are expected
 echo ==============================================================
 
+echo ==============================================================
+echo GENERATE WEB UI ASSETS
+echo ==============================================================
+
 cd $SRC_DIR
+if command -v python3 >/dev/null 2>&1
+then
+       if ! python3 tools/gen_webui_assets.py
+       then
+              echo "Web UI asset generation failed" >&2
+              exit 1
+       fi
+else
+       echo "python3 not found; using committed src/webui/webui_assets.c"
+fi
+
 make clean
 BOARD=$BOARD make -f Makefile-C64

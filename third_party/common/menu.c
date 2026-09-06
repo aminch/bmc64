@@ -61,7 +61,7 @@
 
 extern void reboot(void);
 
-#define VERSION_STRING "5.1.1"
+#define VERSION_STRING "5.1.2"
 
 #ifdef RASPI_LITE
 #define VARIANT_STRING "-Lite"
@@ -150,6 +150,8 @@ static struct menu_item *network_device_item;
 static struct menu_item *network_status_item;
 static struct menu_item *network_ip_address_item;
 static struct menu_item *network_modem_address_item;
+static struct menu_item *webui_enabled_item;
+static int saved_webui_enabled;
 static struct menu_item *timezone_offset_item;
 static struct menu_item *wifi_settings_item;
 static struct menu_item *wifi_ssid_item;
@@ -292,6 +294,11 @@ static void update_wifi_menu_enabled(void) {
   if (wifi_security_item) wifi_security_item->disabled = !enabled;
   if (wifi_country_item) wifi_country_item->disabled = !enabled;
   if (wifi_connect_item) wifi_connect_item->disabled = !enabled;
+
+  if (webui_enabled_item) {
+    webui_enabled_item->disabled =
+        network_device_item == NULL || network_device_item->value == 0;
+  }
 }
 
 struct menu_item *use_scaling_params_item[2];
@@ -1403,6 +1410,10 @@ static int save_settings() {
     saved_network_device = network_device_item->value;
     network_reboot_prompted = 0;
   }
+  if (webui_enabled_item != NULL) {
+    fprintf(fp, "webui_enabled=%d\n", webui_enabled_item->value);
+    saved_webui_enabled = webui_enabled_item->value;
+  }
   if (timezone_offset_item != NULL) {
     fprintf(fp, "timezone_offset_minutes=%d\n",
             timezone_offset_item->choice_ints[timezone_offset_item->value]);
@@ -1705,6 +1716,10 @@ static void load_settings() {
         network_device_item->value = value;
         saved_network_device = value;
       }
+    } else if (webui_enabled_item != NULL &&
+               strcmp(name, "webui_enabled") == 0) {
+      webui_enabled_item->value = value ? 1 : 0;
+      saved_webui_enabled = webui_enabled_item->value;
     } else if (network_modem_address_item != NULL &&
                strcmp(name, "network_modem_address") == 0) {
       if (value >= 0 && value < network_modem_address_item->num_choices &&
@@ -3168,6 +3183,13 @@ static void menu_value_changed(struct menu_item *item) {
     update_wifi_menu_enabled();
     network_reboot_prompted = 0;
     return;
+  case MENU_WEBUI_ENABLED:
+    if (item->value != saved_webui_enabled) {
+      ui_confirm_wrapped_labels("Web UI setting changed",
+          "The Web UI change takes effect after a reboot. Reboot now?",
+          0, MENU_WEBUI_ENABLED, "Yes", "No");
+    }
+    return;
   case MENU_NETWORK_MODEM_ADDRESS:
     if (!circle_set_acia_network_address(
             acia_network_addresses[item->value])) {
@@ -3530,6 +3552,12 @@ static void menu_value_changed(struct menu_item *item) {
          reboot();
       }
     } else if (confirmation_id == MENU_NETWORK_ENABLED) {
+      if (save_settings() == 0) {
+        reboot();
+      } else {
+        ui_error("Cannot save settings");
+      }
+    } else if (confirmation_id == MENU_WEBUI_ENABLED) {
       if (save_settings() == 0) {
         reboot();
       } else {
@@ -4016,6 +4044,9 @@ void build_menu(struct menu_item *root) {
       MENU_ID_DO_NOTHING, parent, "IP Address", 0,
       " ", " ");
     network_ip_address_item->disabled = 1;
+
+    webui_enabled_item =
+      ui_menu_add_toggle(MENU_WEBUI_ENABLED, parent, "Web UI (reboot)", 0);
 
     parent = wifi_settings_item = ui_menu_add_folder(parent, "WiFi Settings");
     wifi_ssid_item = ui_menu_add_text_field_limit(

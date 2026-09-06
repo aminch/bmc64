@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BMC64</title>
+<link rel="icon" type="image/png" href="/mark.png">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div id="app">
+  <aside class="sidebar">
+    <div class="brand"><img class="brand-logo" src="/logo.png" alt="BMC64"></div>
+    <nav class="nav">
+      <a class="nav-item" href="#/dashboard" data-view="dashboard"><span class="ni-ico">▦</span>Dashboard</a>
+      <a class="nav-item" href="#/files" data-view="files"><span class="ni-ico">▤</span>Files</a>
+      <span class="nav-item disabled"><span class="ni-ico">▢</span>System<span class="soon">soon</span></span>
+      <span class="nav-item disabled"><span class="ni-ico">♪</span>Media<span class="soon">soon</span></span>
+      <span class="nav-item disabled"><span class="ni-ico">≣</span>Logs<span class="soon">soon</span></span>
+    </nav>
+    <div class="nav nav-bottom">
+      <button class="nav-item" id="nav-reboot"><span class="ni-ico">⟳</span>Reboot</button>
+    </div>
+    <div class="rainbow"></div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <img class="topbar-logo" src="/logo.png" alt="">
+      <div class="tagline">Bare Metal <b>C64</b> Based on VICE</div>
+      <div class="sys-card">
+        <div class="sys-head"><span class="dot" id="sys-dot"></span><span id="sys-state">Connecting…</span></div>
+        <dl>
+          <dt>Uptime</dt><dd id="sc-uptime">—</dd>
+          <dt>IP Address</dt><dd id="sc-ip">—</dd>
+          <dt>Version</dt><dd id="sc-ver">—</dd>
+        </dl>
+      </div>
+    </header>
+
+    <section class="view" id="view-dashboard">
+      <h1 class="welcome">Welcome to <span class="hl-b">BM</span><span class="hl-c">C6</span><span class="hl-p">4</span></h1>
+      <p class="subhead">Emulate &nbsp;•&nbsp; Create &nbsp;•&nbsp; Play &nbsp;•&nbsp; Explore</p>
+
+      <div class="grid">
+        <div class="card">
+          <h2><span class="c-ico">◴</span>System Status</h2>
+          <dl class="kv">
+            <dt>Machine</dt><dd id="d-machine">—</dd>
+            <dt>Model</dt><dd id="d-model">—</dd>
+            <dt>Network</dt><dd id="d-net">—</dd>
+            <dt>IP Address</dt><dd id="d-ip">—</dd>
+            <dt>Uptime</dt><dd id="d-uptime">—</dd>
+          </dl>
+          <div class="meter" id="d-storage" hidden>
+            <div class="meter-top"><span>SD storage</span><span id="d-storage-txt">—</span></div>
+            <div class="bar"><div class="bar-fill" id="d-storage-bar"></div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2><span class="c-ico">⚡</span>Quick Actions</h2>
+          <div class="tiles">
+            <button class="tile tile-blue" id="qa-files">
+              <span class="tile-ico">▤</span><span class="tile-t">Browse Files</span><span class="tile-s">SD card</span>
+            </button>
+            <button class="tile tile-pink" id="qa-reboot">
+              <span class="tile-ico">⟳</span><span class="tile-t">Reboot</span><span class="tile-s">Restart BMC64</span>
+            </button>
+          </div>
+          <p class="msg" id="action-msg"></p>
+        </div>
+
+        <div class="card">
+          <h2><span class="c-ico">ⓘ</span>System Information</h2>
+          <dl class="kv">
+            <dt>Hostname</dt><dd id="i-host">—</dd>
+            <dt>IP Address</dt><dd id="i-ip">—</dd>
+            <dt>Machine</dt><dd id="i-machine">—</dd>
+            <dt>Model</dt><dd id="i-model">—</dd>
+            <dt>Firmware</dt><dd id="i-ver">—</dd>
+            <dt>Uptime</dt><dd id="i-uptime">—</dd>
+          </dl>
+        </div>
+      </div>
+    </section>
+
+    <section class="view" id="view-files" hidden>
+      <div class="card">
+        <h2><span class="c-ico">▤</span>Files</h2>
+        <div class="fb-bar">
+          <button class="btn" id="fb-up">↑ Up</button>
+          <div class="crumbs" id="fb-crumbs"></div>
+          <button class="btn" id="fb-refresh" title="Refresh">⟳</button>
+        </div>
+        <p class="msg" id="fb-status"></p>
+        <table class="fb-table">
+          <thead><tr><th>Name</th><th class="col-size">Size</th><th class="col-mod">Modified</th><th></th></tr></thead>
+          <tbody id="fb-rows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <span>BMC64 &nbsp;·&nbsp; Bare Metal. Big Possibilities.</span>
+      <span class="rainbow-sm"></span>
+    </footer>
+  </main>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>

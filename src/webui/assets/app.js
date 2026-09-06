@@ -1,0 +1,316 @@
+"use strict";
+
+const $ = (id) => document.getElementById(id);
+
+// ---- status polling (polite: back off on failure, pause when hidden) ----
+
+const POLL_OK_MS = 5000;
+const POLL_FAIL_MS = 12000;
+let pollTimer = null;
+let rebooting = false;
+
+function fmtUptime(secs) {
+  secs = Math.floor(secs || 0);
+  const d = Math.floor(secs / 86400);
+  const h = Math.floor((secs % 86400) / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  const parts = [];
+  if (d) parts.push(d + "d");
+  if (d || h) parts.push(h + "h");
+  parts.push(m + "m");
+  if (!d) parts.push(s + "s");
+  return parts.join(" ");
+}
+
+function fmtKB(kb) {
+  kb = Number(kb) || 0;
+  if (kb < 1024) return kb + " KB";
+  const mb = kb / 1024;
+  if (mb < 1024) return mb.toFixed(mb < 10 ? 1 : 0) + " MB";
+  const gb = mb / 1024;
+  return gb.toFixed(gb < 10 ? 2 : 1) + " GB";
+}
+
+function fmtBytes(n) {
+  return fmtKB(Math.ceil((Number(n) || 0) / 1024));
+}
+
+function setConn(ok, text) {
+  $("sys-dot").className = "dot " + (ok ? "ok" : "bad");
+  $("sys-state").textContent = text || (ok ? "System Online" : "Offline");
+}
+
+function scheduleStatus(ms) {
+  clearTimeout(pollTimer);
+  pollTimer = null;
+  if (document.hidden) return;
+  pollTimer = setTimeout(pollStatus, ms);
+}
+
+async function pollStatus() {
+  let ok = false;
+  try {
+    const r = await fetch("/api/status", { cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const s = await r.json();
+    ok = true;
+
+    $("sc-uptime").textContent = fmtUptime(s.uptime_secs);
+    $("sc-ip").textContent = s.ip || "—";
+    $("sc-ver").textContent = s.version ? "v" + s.version : "—";
+
+    $("d-machine").textContent = s.machine || "—";
+    $("d-model").textContent = s.model || "—";
+    $("d-net").textContent = s.net_text || ("status " + s.net_status);
+    $("d-ip").textContent = s.ip || "—";
+    $("d-uptime").textContent = fmtUptime(s.uptime_secs);
+
+    $("i-host").textContent = s.hostname || "—";
+    $("i-ip").textContent = s.ip || "—";
+    $("i-machine").textContent = s.machine || "—";
+    $("i-model").textContent = s.model || "—";
+    $("i-ver").textContent = s.version ? "BMC64 v" + s.version : "—";
+    $("i-uptime").textContent = fmtUptime(s.uptime_secs);
+
+    if (rebooting) {
+      rebooting = false;
+      $("action-msg").className = "msg";
+      $("action-msg").textContent = "BMC64 is back online.";
+      $("qa-reboot").disabled = false;
+      $("nav-reboot").disabled = false;
+    }
+  } catch (e) {
+    /* keep last known values */
+  }
+  setConn(ok);
+  scheduleStatus(ok ? POLL_OK_MS : POLL_FAIL_MS);
+}
+
+async function refreshVolumes() {
+  try {
+    const r = await fetch("/api/volumes", { cache: "no-store" });
+    if (!r.ok) throw new Error();
+    const v = (await r.json()).volumes || [];
+    const sd = v[0];
+    if (!sd || !sd.total_kb) { $("d-storage").hidden = true; return; }
+    const usedKb = sd.total_kb - sd.free_kb;
+    const pct = Math.min(100, Math.round((usedKb / sd.total_kb) * 100));
+    $("d-storage-bar").style.width = pct + "%";
+    $("d-storage-txt").textContent =
+      fmtKB(sd.free_kb) + " free of " + fmtKB(sd.total_kb);
+    $("d-storage").hidden = false;
+  } catch (e) {
+    $("d-storage").hidden = true;
+  }
+}
+
+// ---- reboot ----
+
+async function doReboot() {
+  if (!confirm("Reboot BMC64 now? Any unsaved emulator state will be lost.")) return;
+  rebooting = true;
+  $("qa-reboot").disabled = true;
+  $("nav-reboot").disabled = true;
+  $("action-msg").className = "msg";
+  $("action-msg").textContent = "Sending reboot command…";
+  try {
+    const r = await fetch("/api/reboot", { method: "POST" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+  } catch (e) {
+    /* the connection usually drops as it reboots; that is expected */
+  }
+  $("action-msg").textContent = "BMC64 is rebooting. This page will reconnect automatically.";
+  scheduleStatus(POLL_FAIL_MS);
+}
+
+// ---- file browser ----
+
+const FILE_ICONS = {
+  d64: "▣", d71: "▣", d81: "▣", d82: "▣", g64: "▣", t64: "▣", tap: "▤",
+  prg: "▶", crt: "▦", sid: "♪", txt: "≣", nfo: "≣", zip: "▤",
+};
+
+function fileIcon(name, isDir) {
+  if (isDir) return "▸";
+  const ext = (name.split(".").pop() || "").toLowerCase();
+  return FILE_ICONS[ext] || "•";
+}
+
+function normPath(p) {
+  if (!p || p[0] !== "/") p = "/" + (p || "");
+  const parts = p.split("/").filter((s) => s && s !== ".");
+  return "/" + parts.join("/");
+}
+
+function parentPath(p) {
+  p = normPath(p);
+  if (p === "/") return "/";
+  return normPath(p.slice(0, p.lastIndexOf("/")) || "/");
+}
+
+function filesHash(path) {
+  path = normPath(path);
+  if (path === "/") return "#/files";
+  return "#/files" + path.split("/").map(encodeURIComponent).join("/");
+}
+
+function pathFromHash() {
+  const raw = (location.hash || "").slice("#/files".length);
+  if (!raw) return "/";
+  try {
+    return normPath(raw.split("/").map(decodeURIComponent).join("/"));
+  } catch (e) {
+    return "/";
+  }
+}
+
+function renderCrumbs(vol, path) {
+  const box = $("fb-crumbs");
+  box.textContent = "";
+  const root = document.createElement("a");
+  root.href = filesHash("/");
+  root.textContent = vol || "SD";
+  box.appendChild(root);
+
+  const parts = normPath(path).split("/").filter(Boolean);
+  let acc = "";
+  parts.forEach((seg, i) => {
+    acc += "/" + seg;
+    const sep = document.createElement("span");
+    sep.className = "sep";
+    sep.textContent = "/";
+    box.appendChild(sep);
+    if (i === parts.length - 1) {
+      const cur = document.createElement("span");
+      cur.className = "cur";
+      cur.textContent = seg;
+      box.appendChild(cur);
+    } else {
+      const a = document.createElement("a");
+      a.href = filesHash(acc);
+      a.textContent = seg;
+      box.appendChild(a);
+    }
+  });
+}
+
+async function loadDir(path) {
+  path = normPath(path);
+  $("fb-up").disabled = path === "/";
+  $("fb-status").className = "msg";
+  $("fb-status").textContent = "Loading…";
+  $("fb-rows").textContent = "";
+
+  let data;
+  try {
+    const r = await fetch("/api/fs/list?path=" + encodeURIComponent(path), { cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status + " " + (await r.text()).trim());
+    data = await r.json();
+  } catch (e) {
+    $("fb-status").className = "msg err";
+    $("fb-status").textContent = "Could not list " + path + " — " + e.message;
+    return;
+  }
+
+  const vol = data.vol || "SD";
+  renderCrumbs(vol, data.path || path);
+
+  const entries = (data.entries || []).slice().sort((a, b) => {
+    if (!!a.dir !== !!b.dir) return a.dir ? -1 : 1;
+    return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+  });
+
+  const tbody = $("fb-rows");
+  const frag = document.createDocumentFragment();
+  for (const e of entries) {
+    const childPath = normPath(path + "/" + e.name);
+    const tr = document.createElement("tr");
+
+    const tdName = document.createElement("td");
+    const wrap = document.createElement("span");
+    wrap.className = "fname";
+    const ic = document.createElement("span");
+    ic.className = "ic " + (e.dir ? "dir" : "file");
+    ic.textContent = fileIcon(e.name, e.dir);
+    wrap.appendChild(ic);
+    if (e.dir) {
+      const a = document.createElement("a");
+      a.href = filesHash(childPath);
+      a.textContent = e.name;
+      wrap.appendChild(a);
+    } else {
+      wrap.appendChild(document.createTextNode(e.name));
+    }
+    tdName.appendChild(wrap);
+
+    const tdSize = document.createElement("td");
+    tdSize.className = "col-size";
+    tdSize.textContent = e.dir ? "—" : fmtBytes(e.size);
+
+    const tdMod = document.createElement("td");
+    tdMod.className = "col-mod";
+    tdMod.textContent = e.mtime ? e.mtime.replace("T", " ") : "";
+
+    const tdAct = document.createElement("td");
+    tdAct.style.textAlign = "right";
+    if (!e.dir) {
+      const dl = document.createElement("a");
+      dl.className = "dl";
+      dl.href = "/api/fs/download?vol=" + encodeURIComponent(vol) +
+                "&path=" + encodeURIComponent(childPath);
+      dl.textContent = "Download";
+      tdAct.appendChild(dl);
+    }
+
+    tr.append(tdName, tdSize, tdMod, tdAct);
+    frag.appendChild(tr);
+  }
+  tbody.appendChild(frag);
+
+  if (!entries.length) {
+    $("fb-status").textContent = "Empty folder.";
+  } else if (data.truncated) {
+    $("fb-status").textContent = entries.length + " entries (list truncated).";
+  } else {
+    $("fb-status").textContent = entries.length + " item" + (entries.length === 1 ? "" : "s") + ".";
+  }
+}
+
+// ---- router ----
+
+function route() {
+  const hash = location.hash || "#/dashboard";
+  const isFiles = hash.startsWith("#/files");
+  $("view-dashboard").hidden = isFiles;
+  $("view-files").hidden = !isFiles;
+
+  document.querySelectorAll(".nav-item[data-view]").forEach((el) => {
+    el.classList.toggle("active", el.dataset.view === (isFiles ? "files" : "dashboard"));
+  });
+
+  if (isFiles) {
+    loadDir(pathFromHash());
+  } else {
+    refreshVolumes();
+  }
+}
+
+// ---- wire up ----
+
+$("qa-reboot").addEventListener("click", doReboot);
+$("nav-reboot").addEventListener("click", doReboot);
+$("qa-files").addEventListener("click", () => { location.hash = filesHash("/"); });
+$("fb-up").addEventListener("click", () => {
+  location.hash = filesHash(parentPath(pathFromHash()));
+});
+$("fb-refresh").addEventListener("click", route);
+
+window.addEventListener("hashchange", route);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) { clearTimeout(pollTimer); pollTimer = null; }
+  else pollStatus();
+});
+
+route();
+pollStatus();
