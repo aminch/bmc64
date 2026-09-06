@@ -137,8 +137,16 @@ the modem.
   uptime, firmware version, SoC temperature, under-voltage and CPU-throttling
   state (both current and "since boot"), and SD-card free space.
 - **Reboot**: a button that restarts BMC64.
-- **Files**: browse the SD card and download any file. This is read-only; there
-  is no upload, delete or rename yet.
+- **Disable Web UI**: stops the server immediately, without a reboot. It starts
+  again on the next boot unless you also turn off `Web UI (reboot)` in the
+  `Network` menu.
+- **Files**: browse the SD card, download any file, upload files into a folder,
+  and delete a file (with a confirmation prompt). Uploads overwrite an existing
+  file of the same name. There is no rename yet. BMC64's own configuration files
+  (`settings*.txt`, `wpa_supplicant.conf`, `cmdline.txt`, `config.txt`,
+  `machines.txt`, `bmc64.log`) and the `/firmware` folder cannot be uploaded to
+  or deleted from the web UI. Do not upload to or delete a disk image the
+  emulator currently has attached.
 
 The server runs on the Raspberry Pi's networking core, not the core that runs
 the emulator, so leaving it enabled has no measurable effect on emulation.

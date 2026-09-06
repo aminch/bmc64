@@ -225,13 +225,14 @@ a:hover { text-decoration: underline; }
 .tile-s { font-size: 12px; color: var(--muted); }
 .tile-blue { color: var(--blue); }
 .tile-pink { color: var(--pink); }
+.tile-amber { color: var(--amber); }
 
 .msg { color: var(--muted); min-height: 1.3em; margin: 12px 0 0; font-size: 13px; }
 .msg.err { color: var(--red); }
 
 /* ---------- files ---------- */
 
-.fb-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.fb-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
 .btn {
   font: inherit;
   padding: 6px 12px;
@@ -242,7 +243,10 @@ a:hover { text-decoration: underline; }
   cursor: pointer;
 }
 .btn:hover { border-color: var(--blue); }
-.btn:disabled { opacity: 0.4; cursor: default; }
+.btn:disabled, .btn.disabled { opacity: 0.4; cursor: default; pointer-events: none; }
+#fb-upload-btn { margin-left: auto; }
+
+.fb-note { color: var(--dim); font-size: 12px; margin: 0 0 10px; }
 
 .crumbs { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
 .crumbs a { color: var(--blue); }
@@ -268,14 +272,20 @@ a:hover { text-decoration: underline; }
 .fname .ic { width: 16px; text-align: center; }
 .fname .ic.dir { color: var(--blue); }
 .fname .ic.file { color: var(--dim); }
-.dl {
+.col-act { text-align: right; white-space: nowrap; }
+.dl, .del {
   padding: 3px 9px;
   border-radius: 7px;
   border: 1px solid var(--border);
   color: var(--muted);
   font-size: 12px;
+  background: none;
+  font-family: inherit;
+  cursor: pointer;
 }
+.del { margin-left: 6px; }
 .dl:hover { border-color: var(--green); color: var(--green); text-decoration: none; }
+.del:hover { border-color: var(--red); color: var(--red); }
 
 /* ---------- footer ---------- */
 

@@ -222,6 +222,47 @@ int ResolveTarget(CSocket *socket, const char *query, char *clean,
   return 0;
 }
 
+boolean CiEqual(const char *a, const char *b) {
+  for (; *a != '\0' && *b != '\0'; a++, b++) {
+    char ca = *a;
+    char cb = *b;
+    if (ca >= 'A' && ca <= 'Z') ca = (char) (ca + 32);
+    if (cb >= 'A' && cb <= 'Z') cb = (char) (cb + 32);
+    if (ca != cb) return FALSE;
+  }
+  return *a == *b;
+}
+
+// Uploads must not clobber BMC64's own configuration or the Wi-Fi
+// firmware directory.
+boolean IsProtectedPath(const char *clean) {
+  const char *seg = clean;
+  while (*seg == '/') seg++;
+  const char *seg_end = seg;
+  while (*seg_end != '\0' && *seg_end != '/') seg_end++;
+  if ((unsigned) (seg_end - seg) == 8) {
+    char first[9];
+    memcpy(first, seg, 8);
+    first[8] = '\0';
+    if (CiEqual(first, "firmware")) return TRUE;
+  }
+
+  const char *base = clean;
+  for (const char *p = clean; *p != '\0'; p++) {
+    if (*p == '/') base = p + 1;
+  }
+  static const char *const kProtected[] = {
+      "settings.txt",     "settings-c128.txt",     "settings-vic20.txt",
+      "settings-plus4.txt", "settings-plus4emu.txt", "settings-pet.txt",
+      "wpa_supplicant.conf", "cmdline.txt",         "config.txt",
+      "machines.txt",     "bmc64.log",
+  };
+  for (unsigned i = 0; i < sizeof(kProtected) / sizeof(kProtected[0]); i++) {
+    if (CiEqual(base, kProtected[i])) return TRUE;
+  }
+  return FALSE;
+}
+
 }  // namespace
 
 void WebUiFsVolumes(CSocket *socket) {
@@ -380,6 +421,141 @@ void WebUiFsDownload(CSocket *socket, const char *query) {
     CScheduler::Get()->Yield();
   }
   f_close(&file);
+}
+
+void WebUiFsUpload(CSocket *socket, const char *query,
+                   const unsigned char *prefetched, unsigned prefetched_len,
+                   long content_length) {
+  char clean[512];
+  char fatpath[560];
+  if (ResolveTarget(socket, query, clean, sizeof(clean), fatpath,
+                    sizeof(fatpath), TRUE) != 0) {
+    return;
+  }
+  if (content_length < 0) {
+    webhttp::SendText(socket, 411, "Length Required",
+                      "Content-Length header required\n");
+    return;
+  }
+  if (IsProtectedPath(clean)) {
+    webhttp::SendText(socket, 403, "Forbidden", "that path is protected\n");
+    return;
+  }
+
+  FILINFO existing;
+  if (f_stat(fatpath, &existing) == FR_OK && (existing.fattrib & AM_DIR)) {
+    webhttp::SendText(socket, 409, "Conflict", "target is a directory\n");
+    return;
+  }
+
+  // Write to "<path>.part" and swap it into place on success, so an
+  // aborted upload never leaves a truncated file.
+  char temppath[576];
+  if ((unsigned) snprintf(temppath, sizeof(temppath), "%s.part", fatpath) >=
+      sizeof(temppath)) {
+    webhttp::SendText(socket, 400, "Bad Request", "path too long\n");
+    return;
+  }
+
+  FIL file;
+  if (f_open(&file, temppath, FA_WRITE | FA_CREATE_ALWAYS) != FR_OK) {
+    webhttp::SendText(socket, 500, "Internal Server Error",
+                      "cannot create file\n");
+    return;
+  }
+
+  unsigned long total = (unsigned long) content_length;
+  unsigned long written = 0;
+  boolean write_failed = FALSE;
+
+  if (prefetched_len > total) {
+    prefetched_len = (unsigned) total;
+  }
+  if (prefetched_len > 0) {
+    UINT bw = 0;
+    if (f_write(&file, prefetched, prefetched_len, &bw) != FR_OK ||
+        bw != prefetched_len) {
+      write_failed = TRUE;
+    }
+    written += prefetched_len;
+  }
+
+  while (!write_failed && written < total) {
+    unsigned long remain = total - written;
+    unsigned want = remain < sizeof(s_io_buffer) ? (unsigned) remain
+                                                 : sizeof(s_io_buffer);
+    int n = socket->Receive(s_io_buffer, want, 0);
+    if (n <= 0) {
+      break;  // client aborted or timed out
+    }
+    UINT bw = 0;
+    if (f_write(&file, s_io_buffer, (UINT) n, &bw) != FR_OK ||
+        bw != (UINT) n) {
+      write_failed = TRUE;
+      break;
+    }
+    written += (unsigned) n;
+    CScheduler::Get()->Yield();
+  }
+
+  f_close(&file);
+
+  if (write_failed) {
+    f_unlink(temppath);
+    webhttp::SendText(socket, 507, "Insufficient Storage",
+                      "write failed (disk full?)\n");
+    return;
+  }
+  if (written != total) {
+    f_unlink(temppath);
+    webhttp::SendText(socket, 400, "Bad Request", "upload truncated\n");
+    return;
+  }
+
+  f_unlink(fatpath);  // ignore result: file may not exist
+  if (f_rename(temppath, fatpath) != FR_OK) {
+    f_unlink(temppath);
+    webhttp::SendText(socket, 500, "Internal Server Error",
+                      "cannot finalise upload\n");
+    return;
+  }
+
+  char body[64];
+  int bn = snprintf(body, sizeof(body), "{\"ok\":true,\"size\":%lu}", written);
+  webhttp::SendResponse(socket, 200, "OK", "application/json", body,
+                        bn > 0 ? (unsigned) bn : 0);
+}
+
+void WebUiFsDelete(CSocket *socket, const char *query) {
+  char clean[512];
+  char fatpath[560];
+  if (ResolveTarget(socket, query, clean, sizeof(clean), fatpath,
+                    sizeof(fatpath), TRUE) != 0) {
+    return;
+  }
+  if (IsProtectedPath(clean)) {
+    webhttp::SendText(socket, 403, "Forbidden", "that path is protected\n");
+    return;
+  }
+
+  FRESULT fr = f_unlink(fatpath);
+  if (fr == FR_NO_FILE || fr == FR_NO_PATH || fr == FR_INVALID_NAME) {
+    webhttp::SendText(socket, 404, "Not Found", "no such file\n");
+    return;
+  }
+  if (fr == FR_DENIED) {
+    webhttp::SendText(socket, 409, "Conflict",
+                      "cannot delete (directory not empty or read-only)\n");
+    return;
+  }
+  if (fr != FR_OK) {
+    webhttp::SendText(socket, 500, "Internal Server Error", "delete failed\n");
+    return;
+  }
+
+  const char *ok = "{\"ok\":true}";
+  webhttp::SendResponse(socket, 200, "OK", "application/json", ok,
+                        (unsigned) strlen(ok));
 }
 
 #endif  // RASPI_C64 || RASPI_C128

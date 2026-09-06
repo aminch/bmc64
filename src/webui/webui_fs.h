@@ -1,10 +1,12 @@
 //
 // webui_fs.h
 //
-// Read-only filesystem endpoints for the web UI. All access is confined
-// to the configured SD card volume and sandboxed against path traversal.
-// FatFs calls are serialised with the emulator by FF_FS_REENTRANT; reads
-// are chunked so a transfer never holds the volume lock for long.
+// Filesystem endpoints for the web UI: directory listing and download
+// (read-only) plus a single streamed upload path. All access is confined
+// to the configured SD card volume and sandboxed against path traversal;
+// upload additionally refuses a small denylist of config/firmware files.
+// FatFs calls are serialised with the emulator by FF_FS_REENTRANT and
+// chunked so a transfer never holds the volume lock for long.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -31,5 +33,18 @@ void WebUiFsList(CSocket *socket, const char *query);
 
 // GET /api/fs/download?vol=SD&path=/dir/file  -> raw file bytes.
 void WebUiFsDownload(CSocket *socket, const char *query);
+
+// POST /api/fs/upload?vol=SD&path=/dir/file  <- the raw request body is
+// the file. prefetched[0..prefetched_len) are body bytes already read
+// with the request headers; the remainder (up to content_length total)
+// is streamed from the socket. content_length < 0 means no
+// Content-Length header was sent (rejected with 411).
+void WebUiFsUpload(CSocket *socket, const char *query,
+                   const unsigned char *prefetched, unsigned prefetched_len,
+                   long content_length);
+
+// POST /api/fs/delete?vol=SD&path=/dir/file  -> remove a file (or an
+// empty directory). The same protected paths as upload are refused.
+void WebUiFsDelete(CSocket *socket, const char *query);
 
 #endif

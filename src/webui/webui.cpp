@@ -7,7 +7,8 @@
 // scheduler keeps servicing the network stack and other tasks.
 //
 // Endpoints: GET static assets, GET /api/status, POST /api/reboot,
-// GET /api/volumes, GET /api/fs/list, GET /api/fs/download.
+// GET /api/volumes, GET /api/fs/list, GET /api/fs/download,
+// POST /api/fs/upload, POST /api/fs/delete, POST /api/webui/disable.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -101,6 +102,47 @@ const char *NetStatusText(int status) {
 using webhttp::SendResponse;
 using webhttp::SendText;
 
+// Case-insensitive test whether s begins with the (already lowercase) prefix.
+boolean CiPrefix(const char *s, const char *lower_prefix) {
+  for (; *lower_prefix != '\0'; s++, lower_prefix++) {
+    char c = *s;
+    if (c >= 'A' && c <= 'Z') {
+      c = (char) (c + 32);
+    }
+    if (c != *lower_prefix) {
+      return FALSE;
+    }
+  }
+  return TRUE;
+}
+
+// Value of the Content-Length header in a raw request, or -1 if absent.
+long ParseContentLength(const char *request) {
+  const char *p = request;
+  while (*p != '\0') {
+    if (CiPrefix(p, "content-length:")) {
+      p += 15;
+      while (*p == ' ' || *p == '\t') {
+        p++;
+      }
+      long value = 0;
+      boolean any = FALSE;
+      while (*p >= '0' && *p <= '9') {
+        value = value * 10 + (*p - '0');
+        p++;
+        any = TRUE;
+      }
+      return any ? value : -1;
+    }
+    const char *nl = strstr(p, "\r\n");
+    if (nl == 0) {
+      break;
+    }
+    p = nl + 2;
+  }
+  return -1;
+}
+
 const struct webui_asset *FindAsset(const char *path) {
   for (unsigned i = 0; i < g_webui_asset_count; i++) {
     if (strcmp(g_webui_assets[i].path, path) == 0) {
@@ -175,6 +217,11 @@ void HandleStatus(CSocket *socket) {
   SendResponse(socket, 200, "OK", "application/json", body, (unsigned) length);
 }
 
+// Server lifecycle flags. s_started guards against a second task;
+// g_webui_stop is set by POST /api/webui/disable to end the accept loop.
+boolean s_started = FALSE;
+boolean g_webui_stop = FALSE;
+
 // Returns TRUE if a reboot was requested (caller must not touch the
 // socket afterwards; reboot() does not return).
 boolean HandleConnection(CSocket *socket) {
@@ -198,6 +245,13 @@ boolean HandleConnection(CSocket *socket) {
       break;
     }
   }
+
+  // Body bytes that arrived in the same read(s) as the headers, plus the
+  // declared body length (for streamed uploads).
+  const unsigned char *body =
+      (const unsigned char *) (strstr(request, "\r\n\r\n") + 4);
+  unsigned body_prefetched = (unsigned) ((const unsigned char *) (request + length) - body);
+  long content_length = ParseContentLength(request);
 
   char method[8];
   char target[512];
@@ -233,6 +287,26 @@ boolean HandleConnection(CSocket *socket) {
 
   if (is_get && strcmp(target, "/api/fs/download") == 0) {
     WebUiFsDownload(socket, query);
+    return FALSE;
+  }
+
+  if (is_post && strcmp(target, "/api/fs/upload") == 0) {
+    WebUiFsUpload(socket, query, body, body_prefetched, content_length);
+    return FALSE;
+  }
+
+  if (is_post && strcmp(target, "/api/fs/delete") == 0) {
+    WebUiFsDelete(socket, query);
+    return FALSE;
+  }
+
+  if (is_post && strcmp(target, "/api/webui/disable") == 0) {
+    const char *ok = "{\"ok\":true}";
+    SendResponse(socket, 200, "OK", "application/json", ok,
+                 (unsigned) strlen(ok));
+    CLogger::Get()->Write(WEBUI_LOG, LogNotice,
+                          "Web UI stop requested via web UI");
+    g_webui_stop = TRUE;
     return FALSE;
   }
 
@@ -308,15 +382,20 @@ public:
       }
       HandleConnection(connection);
       delete connection;
+      if (g_webui_stop) {
+        break;
+      }
       CScheduler::Get()->Yield();
     }
+
+    // listener goes out of scope here, freeing the port.
+    CLogger::Get()->Write(WEBUI_LOG, LogNotice, "Web UI stopped");
+    s_started = FALSE;
   }
 
 private:
   CNetSubSystem *m_network;
 };
-
-boolean s_started = FALSE;
 
 }  // namespace
 

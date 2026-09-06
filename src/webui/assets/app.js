@@ -9,6 +9,10 @@ const POLL_FAIL_MS = 12000;
 let pollTimer = null;
 let rebooting = false;
 
+// current file-browser location (set by loadDir)
+let fbVol = "SD";
+let fbPath = "/";
+
 function fmtUptime(secs) {
   secs = Math.floor(secs || 0);
   const d = Math.floor(secs / 86400);
@@ -180,6 +184,31 @@ async function doReboot() {
   scheduleStatus(POLL_FAIL_MS);
 }
 
+async function disableWebUi() {
+  if (!confirm(
+    "Disable the Web UI now?\n\n" +
+    "The server stops immediately. It starts again after the next reboot " +
+    "unless you also turn it off in the Network menu.")) return;
+  $("qa-disable").disabled = true;
+  $("action-msg").className = "msg";
+  $("action-msg").textContent = "Stopping the Web UI…";
+  try {
+    const r = await fetch("/api/webui/disable", { method: "POST" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+  } catch (e) {
+    $("action-msg").className = "msg err";
+    $("action-msg").textContent = "Could not stop the Web UI — " + e.message;
+    $("qa-disable").disabled = false;
+    return;
+  }
+  clearTimeout(pollTimer);
+  pollTimer = null;
+  setConn(false, "Stopped");
+  $("action-msg").textContent =
+    "Web UI stopped. This page is now offline; it returns after the next " +
+    "reboot unless disabled in the Network menu.";
+}
+
 // ---- file browser ----
 
 const FILE_ICONS = {
@@ -270,7 +299,9 @@ async function loadDir(path) {
   }
 
   const vol = data.vol || "SD";
-  renderCrumbs(vol, data.path || path);
+  fbVol = vol;
+  fbPath = data.path || path;
+  renderCrumbs(vol, fbPath);
 
   const entries = (data.entries || []).slice().sort((a, b) => {
     if (!!a.dir !== !!b.dir) return a.dir ? -1 : 1;
@@ -309,7 +340,7 @@ async function loadDir(path) {
     tdMod.textContent = e.mtime ? e.mtime.replace("T", " ") : "";
 
     const tdAct = document.createElement("td");
-    tdAct.style.textAlign = "right";
+    tdAct.className = "col-act";
     if (!e.dir) {
       const dl = document.createElement("a");
       dl.className = "dl";
@@ -317,6 +348,12 @@ async function loadDir(path) {
                 "&path=" + encodeURIComponent(childPath);
       dl.textContent = "Download";
       tdAct.appendChild(dl);
+
+      const del = document.createElement("button");
+      del.className = "del";
+      del.textContent = "Delete";
+      del.addEventListener("click", () => deleteEntry(childPath, e.name));
+      tdAct.appendChild(del);
     }
 
     tr.append(tdName, tdSize, tdMod, tdAct);
@@ -331,6 +368,74 @@ async function loadDir(path) {
   } else {
     $("fb-status").textContent = entries.length + " item" + (entries.length === 1 ? "" : "s") + ".";
   }
+}
+
+// ---- delete ----
+
+async function deleteEntry(path, name) {
+  if (!confirm("Delete “" + name + "”?\n\nThis cannot be undone.")) return;
+  $("fb-status").className = "msg";
+  $("fb-status").textContent = "Deleting " + name + "…";
+  try {
+    const r = await fetch(
+      "/api/fs/delete?vol=" + encodeURIComponent(fbVol) +
+      "&path=" + encodeURIComponent(path), { method: "POST" });
+    if (!r.ok) throw new Error("HTTP " + r.status + " " + (await r.text()).trim());
+  } catch (e) {
+    $("fb-status").className = "msg err";
+    $("fb-status").textContent = "Could not delete " + name + " — " + e.message;
+    return;
+  }
+  loadDir(fbPath);
+}
+
+// ---- upload ----
+
+function uploadOne(file) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const url = "/api/fs/upload?vol=" + encodeURIComponent(fbVol) +
+      "&path=" + encodeURIComponent(normPath(fbPath + "/" + file.name));
+    xhr.open("POST", url);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) {
+        const pct = Math.round((e.loaded / e.total) * 100);
+        $("fb-status").textContent = "Uploading " + file.name + " — " + pct + "%";
+      }
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve();
+      else reject(new Error("HTTP " + xhr.status + " " + (xhr.responseText || "").trim()));
+    };
+    xhr.onerror = () => reject(new Error("network error"));
+    xhr.send(file);
+  });
+}
+
+async function uploadFiles(fileList) {
+  const files = Array.from(fileList || []);
+  if (!files.length) return;
+  $("fb-upload").disabled = true;
+  $("fb-upload-btn").classList.add("disabled");
+  $("fb-status").className = "msg";
+  let done = 0;
+  for (const f of files) {
+    try {
+      await uploadOne(f);
+      done++;
+    } catch (e) {
+      $("fb-status").className = "msg err";
+      $("fb-status").textContent = "Upload of " + f.name + " failed — " + e.message;
+      break;
+    }
+  }
+  $("fb-upload").disabled = false;
+  $("fb-upload-btn").classList.remove("disabled");
+  $("fb-upload").value = "";
+  if (done === files.length) {
+    $("fb-status").textContent = "Uploaded " + done + " file" + (done === 1 ? "" : "s") + ".";
+  }
+  loadDir(fbPath);
 }
 
 // ---- router ----
@@ -356,11 +461,13 @@ function route() {
 
 $("qa-reboot").addEventListener("click", doReboot);
 $("nav-reboot").addEventListener("click", doReboot);
+$("qa-disable").addEventListener("click", disableWebUi);
 $("qa-files").addEventListener("click", () => { location.hash = filesHash("/"); });
 $("fb-up").addEventListener("click", () => {
   location.hash = filesHash(parentPath(pathFromHash()));
 });
 $("fb-refresh").addEventListener("click", route);
+$("fb-upload").addEventListener("change", (e) => uploadFiles(e.target.files));
 
 window.addEventListener("hashchange", route);
 document.addEventListener("visibilitychange", () => {

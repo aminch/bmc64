@@ -111,13 +111,31 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urllib.parse.urlparse(self.path)
-        if parsed.path == "/api/reboot":
-            length = int(self.headers.get("Content-Length") or 0)
-            if length:
-                self.rfile.read(length)
+        path = parsed.path
+        if path == "/api/reboot":
+            self._drain_body()
             sys.stderr.write("  [mock] /api/reboot (no-op)\n")
             return self._json(202, {"ok": True})
+        if path == "/api/webui/disable":
+            self._drain_body()
+            sys.stderr.write("  [mock] /api/webui/disable - stopping server\n")
+            self._json(200, {"ok": True})
+            import threading
+            threading.Thread(target=self.server.shutdown, daemon=True).start()
+            return
+        if path == "/api/fs/upload":
+            return self.api_fs_upload(parsed.query)
+        if path == "/api/fs/delete":
+            return self.api_fs_delete(parsed.query)
         return self._send(404, "not found\n")
+
+    def _drain_body(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        while length > 0:
+            chunk = self.rfile.read(min(length, 65536))
+            if not chunk:
+                break
+            length -= len(chunk)
 
     def route(self):
         parsed = urllib.parse.urlparse(self.path)
@@ -223,6 +241,79 @@ class Handler(BaseHTTPRequestHandler):
             "Content-Disposition": 'attachment; filename="%s"'
                                    % os.path.basename(target),
         })
+
+    PROTECTED = {
+        "settings.txt", "settings-c128.txt", "settings-vic20.txt",
+        "settings-plus4.txt", "settings-plus4emu.txt", "settings-pet.txt",
+        "wpa_supplicant.conf", "cmdline.txt", "config.txt", "machines.txt",
+        "bmc64.log",
+    }
+
+    def api_fs_upload(self, query):
+        length = self.headers.get("Content-Length")
+        if length is None:
+            self._drain_body()
+            return self._send(411, "Content-Length header required\n")
+        length = int(length)
+        q = urllib.parse.parse_qs(query)
+        rel = (q.get("path") or [""])[0]
+        target = safe_join(ARGS.root, rel)
+        if target is None or rel in ("", "/"):
+            self._drain_body()
+            return self._send(400, "bad path\n")
+        parts = [p for p in rel.split("/") if p not in ("", ".")]
+        if (parts and parts[0].lower() == "firmware") or \
+           os.path.basename(target).lower() in self.PROTECTED:
+            self._drain_body()
+            return self._send(403, "that path is protected\n")
+        if os.path.isdir(target):
+            self._drain_body()
+            return self._send(409, "target is a directory\n")
+
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        tmp = target + ".part"
+        got = 0
+        try:
+            with open(tmp, "wb") as fh:
+                while got < length:
+                    chunk = self.rfile.read(min(length - got, 65536))
+                    if not chunk:
+                        break
+                    fh.write(chunk)
+                    got += len(chunk)
+        except OSError as e:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+            return self._send(507, "write failed: %s\n" % e)
+        if got != length:
+            os.remove(tmp)
+            return self._send(400, "upload truncated\n")
+        os.replace(tmp, target)
+        sys.stderr.write("  [mock] uploaded %s (%d bytes)\n" % (target, got))
+        self._json(200, {"ok": True, "size": got})
+
+    def api_fs_delete(self, query):
+        self._drain_body()
+        q = urllib.parse.parse_qs(query)
+        rel = (q.get("path") or [""])[0]
+        target = safe_join(ARGS.root, rel)
+        if target is None or rel in ("", "/"):
+            return self._send(400, "bad path\n")
+        parts = [p for p in rel.split("/") if p not in ("", ".")]
+        if (parts and parts[0].lower() == "firmware") or \
+           os.path.basename(target).lower() in self.PROTECTED:
+            return self._send(403, "that path is protected\n")
+        try:
+            if os.path.isdir(target):
+                os.rmdir(target)
+            elif os.path.exists(target):
+                os.remove(target)
+            else:
+                return self._send(404, "no such file\n")
+        except OSError as e:
+            return self._send(409, "cannot delete: %s\n" % e)
+        sys.stderr.write("  [mock] deleted %s\n" % target)
+        self._json(200, {"ok": True})
 
 
 def main():
