@@ -30,6 +30,7 @@
 
 // VICE includes
 #include "c128/c128.h"
+#include "c64/cart/reu.h"
 #include "resources.h"
 #include "keyboard.h"
 #include "cartridge.h"
@@ -44,6 +45,49 @@
 // TODO: Should really move 40/80 stuff into here...
 extern struct menu_item *c40_80_column_item;
 extern struct menu_item *active_display_item;
+
+// The REU is part of the C64 cartridge system, which x128 also links and wires
+// into the C128 memory/MMU ($FF00 DMA trigger). The menu below mirrors the C64
+// version in menu_c64.c so C128 mode can enable/size/image the REU too.
+static int reu_size_to_index[8] =
+    { 128, 256, 512, 1024, 2048, 4096, 8192, 16384 };
+
+static struct menu_item *reu_image_menu;
+static struct menu_item *reu_attach_image_item;
+static struct menu_item *reu_detach_image_item;
+static struct menu_item *reu_save_image_item;
+static struct menu_item *reu_save_image_as_item;
+static struct menu_item *reu_size_item;
+
+static void update_reu_image_enabled(int enabled) {
+  const char *filename;
+  int disabled = enabled == 0;
+
+  resources_get_string("REUfilename", &filename);
+  reu_image_menu->disabled = disabled;
+  reu_attach_image_item->disabled = disabled;
+  reu_detach_image_item->disabled = disabled || filename == NULL || *filename == '\0';
+  reu_save_image_item->disabled = disabled || filename == NULL || *filename == '\0';
+  reu_save_image_as_item->disabled = disabled;
+}
+
+static void menu_value_changed(struct menu_item *item) {
+  switch (item->id) {
+    case MENU_REU:
+      if (resources_set_int("REU", item->value) < 0) {
+        item->value = 0;
+        ui_error("Unable to enable RAM Expansion");
+      }
+      update_reu_image_enabled(item->value);
+      break;
+    case MENU_REU_SIZE:
+      if (item->value >= 0 && item->value < 8)
+        resources_set_int("REUsize", reu_size_to_index[item->value]);
+      break;
+    default:
+      break;
+  }
+}
 
 unsigned long emux_calculate_timing(double fps) {
   if (fps >= 49 && fps <= 51) {
@@ -238,16 +282,66 @@ struct menu_item* emux_add_cartridge_options(struct menu_item* root) {
   ui_menu_add_button(MENU_SAVE_EASYFLASH, parent, "Save EasyFlash Now");
   ui_menu_add_button(MENU_CART_FREEZE, parent, "Cartridge Freeze");
 
+  struct menu_item* child = ui_menu_add_folder(parent, "Ram Expansion");
+
+  int tmp;
+  resources_get_int("REU", &tmp);
+  struct menu_item* reu_item =
+     ui_menu_add_toggle(MENU_REU, child, "Ram Expansion", tmp);
+  reu_item->on_value_changed = menu_value_changed;
+
+  reu_size_item =
+      ui_menu_add_multiple_choice(MENU_REU_SIZE, child, "Memory Size");
+  reu_size_item->on_value_changed = menu_value_changed;
+  reu_size_item->num_choices = 8;
+
+  resources_get_int("REUsize", &tmp);
+  reu_size_item->value = 2;
+  for (int t = 0; t < 8; t++) {
+    if (tmp == reu_size_to_index[t])
+       reu_size_item->value = t;
+  }
+
+  strcpy(reu_size_item->choices[0], "128k");
+  strcpy(reu_size_item->choices[1], "256k");
+  strcpy(reu_size_item->choices[2], "512k");
+  strcpy(reu_size_item->choices[3], "1024k");
+  strcpy(reu_size_item->choices[4], "2048k");
+  strcpy(reu_size_item->choices[5], "4096k");
+  strcpy(reu_size_item->choices[6], "8192k");
+  strcpy(reu_size_item->choices[7], "16384k");
+
+  reu_image_menu = ui_menu_add_folder(child, "Ram Image (optional)");
+  reu_attach_image_item = ui_menu_add_button(
+    MENU_REU_ATTACH_IMAGE, reu_image_menu, "Load image...");
+  reu_detach_image_item = ui_menu_add_button(
+    MENU_REU_DETACH_IMAGE, reu_image_menu, "Clear image");
+  reu_save_image_item = ui_menu_add_button(
+    MENU_REU_SAVE_IMAGE, reu_image_menu, "Save image now");
+  reu_save_image_as_item = ui_menu_add_button(
+    MENU_REU_SAVE_IMAGE_AS, reu_image_menu, "Save image as...");
+  update_reu_image_enabled(reu_item->value);
+
   return parent;
 }
 
 int emux_save_reu_image(const char *path) {
-  (void)path;
-  return -1;
+  if (!reu_cart_enabled()) {
+    return -2;
+  }
+  return reu_bin_save(path);
 }
 
 void emux_reu_image_loaded(int size_kb) {
-  (void)size_kb;
+  if (size_kb > 0) {
+    for (int index = 0; index < 8; index++) {
+      if (reu_size_to_index[index] == size_kb) {
+        reu_size_item->value = index;
+        break;
+      }
+    }
+  }
+  update_reu_image_enabled(reu_cart_enabled());
 }
 
 void emux_machine_load_settings_done(void) {

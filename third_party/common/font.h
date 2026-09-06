@@ -26,6 +26,8 @@
 #ifndef RASPI_FONT_H_
 #define RASPI_FONT_H_
 
-char font8x8_basic[128][8];
+// 256-entry 8x8 font indexed by Unicode code point U+0000 - U+00FF.
+// See font.c for the layout (ASCII, .notdef box at 0x7F, Latin-1 at 0xA0+).
+extern char font8x8_basic[256][8];
 
 #endif

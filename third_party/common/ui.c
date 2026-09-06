@@ -39,6 +39,7 @@
 #include "joy.h"
 #include "kbd.h"
 #include "menu.h"
+#include "menu_text_layout.h"
 #include "font.h"
 #include "menu_timing.h"
 
@@ -69,6 +70,41 @@
 uint8_t *video_font;
 uint16_t video_font_translate[256];
 uint8_t *raw_video_font;
+
+// When set, all translated (ASCII) menu/OSD text is drawn with the built-in
+// machine-independent 8x8 font (font8x8_basic) instead of the active machine's
+// CHARGEN ROM. This gives a consistent, full ASCII character set across all
+// machines for things like SSIDs and passwords. The raw font path (virtual
+// keyboard key caps, menu item symbols) still uses the machine CHARGEN.
+#define UI_USE_COMMON_MENU_FONT 1
+
+// font8x8_basic is a 256-entry table indexed by Unicode code point
+// U+0000 - U+00FF. Text passed to ui_draw_text()/ui_draw_text_buf() is
+// decoded from UTF-8, so a multi-byte character maps to a single glyph.
+// Anything outside Latin-1 (code point >= U+0100) and any malformed UTF-8
+// (decoded as U+FFFD) renders as this ".notdef" box glyph.
+#define FONT_NOTDEF_INDEX 0x7F
+
+// Decode one UTF-8 sequence starting at s. Stores the code point in *cp and
+// returns a pointer to the next sequence. Malformed input yields U+FFFD and
+// advances a single byte so callers always make progress.
+static const char *ui_utf8_next(const char *s, uint32_t *cp) {
+  const uint8_t *p = (const uint8_t *)s;
+  uint8_t c = p[0];
+  int n;
+  uint32_t v;
+  if (c < 0x80) { *cp = c; return s + 1; }
+  else if ((c & 0xE0) == 0xC0) { n = 1; v = c & 0x1F; }
+  else if ((c & 0xF0) == 0xE0) { n = 2; v = c & 0x0F; }
+  else if ((c & 0xF8) == 0xF0) { n = 3; v = c & 0x07; }
+  else { *cp = 0xFFFD; return s + 1; }
+  for (int i = 1; i <= n; i++) {
+    if ((p[i] & 0xC0) != 0x80) { *cp = 0xFFFD; return s + 1; }
+    v = (v << 6) | (p[i] & 0x3F);
+  }
+  *cp = v;
+  return s + n + 1;
+}
 
 // Is the UI layer enabled? (either OSD or MENU)
 volatile int ui_enabled;
@@ -142,6 +178,11 @@ static int ui_key_ticks_repeats;
 static int ui_key_ticks_repeats_next;
 
 static void ui_action(long action);
+static int ui_keyboard_mapping = KEYBOARD_MAPPING_SYM;
+
+void ui_set_keyboard_mapping(int mapping) {
+  ui_keyboard_mapping = mapping;
+}
 
 static int keyboard_shift = 0;
 
@@ -182,8 +223,10 @@ void ui_init_menu(void) {
   ui_key_ticks_repeats_next = 0;
 }
 
-// Draw a single character at x,y coords into the offscreen area
-static void ui_draw_char(uint8_t c, int pos_x, int pos_y, int color,
+// Draw a single character at x,y coords into the offscreen area.
+// For the translated path c is a Unicode code point; for the raw path it is
+// a byte index into the machine CHARGEN font.
+static void ui_draw_char(uint32_t c, int pos_x, int pos_y, int color,
                          uint8_t *dst, int dst_pitch, int stretch,
                          int translate) {
   int x, y, s;
@@ -206,10 +249,17 @@ static void ui_draw_char(uint8_t c, int pos_x, int pos_y, int color,
   }
 
   if (translate) {
-     // Use translation table.
-     font_pos = &(video_font[video_font_translate[c]]);
+#if UI_USE_COMMON_MENU_FONT
+     // Machine-independent font indexed by Unicode code point U+0000-U+00FF.
+     // Anything above Latin-1 (or U+FFFD from bad UTF-8) uses the box glyph.
+     uint32_t gi = (c <= 0xFF) ? c : (uint32_t)FONT_NOTDEF_INDEX;
+     font_pos = &(((uint8_t *)font8x8_basic)[8 * gi]);
+#else
+     // Use translation table into the active machine's CHARGEN ROM.
+     font_pos = &(video_font[video_font_translate[c & 0xff]]);
+#endif
   } else {
-     font_pos = &(raw_video_font[c*8]);
+     font_pos = &(raw_video_font[(c & 0xff) * 8]);
   }
   draw_pos = &(dst[pos_x + pos_y * dst_pitch]);
 
@@ -228,25 +278,29 @@ static void ui_draw_char(uint8_t c, int pos_x, int pos_y, int color,
 }
 
 // Draw a string of text at location x,y. Does not word wrap.
+// text is UTF-8; each decoded code point advances one 8px cell.
 void ui_draw_text_buf(const char *text, int x, int y, int color, uint8_t *dst,
                       int dst_pitch, int stretch) {
-  int i;
   int x2 = x;
-  for (i = 0; i < strlen(text); i++) {
-    if (text[i] == '\n') {
+  const char *p = text;
+  while (*p) {
+    if (*p == '\n') {
       y = y + 8*stretch;
       x2 = x;
-    } else {
-      ui_draw_char(text[i], x2, y, color, dst, dst_pitch, stretch, 1);
-      x2 = x2 + 8*stretch;
+      p++;
+      continue;
     }
+    uint32_t cp;
+    p = ui_utf8_next(p, &cp);
+    ui_draw_char(cp, x2, y, color, dst, dst_pitch, stretch, 1);
+    x2 = x2 + 8*stretch;
   }
 }
 
 // No font translation from ascii to petscii
 void ui_draw_char_raw(const char singlechar, int x, int y, int color,
                       uint8_t *dst, int dst_pitch, int stretch) {
-   ui_draw_char(singlechar, x, y, color, dst, dst_pitch, stretch, 0);
+   ui_draw_char((uint8_t)singlechar, x, y, color, dst, dst_pitch, stretch, 0);
 }
 
 void ui_draw_text(const char *text, int x, int y, int color) {
@@ -287,7 +341,14 @@ void ui_draw_rect(int x, int y, int w, int h, int color, int fill) {
 }
 
 // Returns the height/width the given text would occupy if drawn
-int ui_text_width(const char *text) { return 8 * strlen(text); }
+// Width in pixels: one 8px cell per UTF-8 code point, not per byte.
+int ui_text_width(const char *text) {
+  int n = 0;
+  const char *p = text;
+  uint32_t cp;
+  while (*p) { p = ui_utf8_next(p, &cp); n++; }
+  return 8 * n;
+}
 
 static void do_on_value_changed(struct menu_item *item) {
   if (item->on_value_changed) {
@@ -340,12 +401,10 @@ static void ui_key_pressed(long key) {
   }
 
   if (menu_cursor_item[current_menu]->type == TEXTFIELD) {
-    if (key == KEYCODE_Comma) {
-      ui_type_char(',');
-      return;
-    }
-    if (key == KEYCODE_Period) {
-      ui_type_char('.');
+    char ch = menu_text_layout_key_to_char(key, keyboard_shift,
+                        ui_keyboard_mapping);
+    if (ch != '\0') {
+      ui_type_char(ch);
       return;
     }
   }
@@ -396,20 +455,14 @@ static void ui_key_pressed(long key) {
     else
       ch = 'a' + key - KEYCODE_a;
     ui_type_char(ch);
-  } else if (key >= KEYCODE_1 && key <= KEYCODE_9) {
-    char ch = '1' + key - KEYCODE_1;
-    ui_type_char(ch);
-  } else if (key == KEYCODE_0) {
-    ui_type_char('0');
-  } else if (key == KEYCODE_Dash) {
-    if (keyboard_shift)
-      ui_type_char('_');
-    else
-      ui_type_char('-');
-  } else if (key == KEYCODE_Period) {
-    ui_type_char('.');
   } else if (key == KEYCODE_Backspace) {
     ui_type_char('\b');
+  } else {
+    char ch = menu_text_layout_key_to_char(key, keyboard_shift,
+                        ui_keyboard_mapping);
+    if (ch != '\0') {
+      ui_type_char(ch);
+    }
   }
 }
 

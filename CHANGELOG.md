@@ -1,5 +1,18 @@
 ## 5.1.1 (pre-release)
   * Remove FD2000 and FD4000 from bootstat code for VIC20 and PLUS/4
+  * Expose VICE REU settings for C128 machine
+  * Support large CMD HD and IDE64 hard-disk images that do not fit in RAM
+    * Images over 32 MB now stream directly from the SD card instead of being
+      loaded whole into memory (which failed with "out of memory")
+    * FatFs fast seek is enabled so streamed access stays responsive
+    * Maximum image size is just under 2 GB (FAT32 / 32-bit file offsets);
+      larger images are refused at attach with a clear log message
+    * Smaller images (floppies, REU images, snapshots) are unchanged
+  * Changed main menu to always have a consistent font for all machines
+    * Menu, status bar and OSD text now render with BESCII font instead of the active machine's CHARGEN ROM.
+    * Menu text is now decoded from UTF-8 with a full Latin-1 character set.
+    * Added a hidden font test screen, opened by pressing Enter on the last line of the About screen.
+  * Partial fix for #331, add basic mapping to allow keyboards to enter shifted characters in main menu.
 
 ## 5.1.0
   * Add missing CMD HD drive option for Plus/4, lost in the original backport
