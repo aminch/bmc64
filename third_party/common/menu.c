@@ -789,7 +789,8 @@ static void show_about() {
 
   ui_menu_add_divider(about_root);
   ui_menu_add_button(MENU_TEXT, about_root, "https://github.com/");
-  ui_menu_add_button(MENU_TEXT, about_root, "         randyrossi/bmc64");
+  // Pressing Enter on this last line opens the font test screen.
+  ui_menu_add_button(MENU_FONT_TEST, about_root, "         randyrossi/bmc64");
 }
 
 static void show_license() {
@@ -798,6 +799,67 @@ static void show_license() {
   for (i = 0; i < 510; i++) {
     ui_menu_add_button(MENU_TEXT, license_root, license[i]);
   }
+}
+
+// Append code point cp (<= U+07FF) to dst as UTF-8, advancing *len.
+static void font_test_append(char *dst, int *len, unsigned int cp) {
+  if (cp < 0x80) {
+    dst[(*len)++] = (char)cp;
+  } else {
+    dst[(*len)++] = (char)(0xC0 | (cp >> 6));
+    dst[(*len)++] = (char)(0x80 | (cp & 0x3F));
+  }
+}
+
+// One row of 16 glyphs for the code points starting at base, prefixed with
+// the hex value. Latin-1 rows are exactly MAX_MENU_STR-1 bytes, so the
+// buffer is sized to hold them without truncation.
+static void font_test_row(struct menu_item *root, unsigned int base) {
+  char line[MAX_MENU_STR];
+  int len = snprintf(line, sizeof(line), "%02X ", base);
+  unsigned int c;
+  for (c = base; c < base + 16; c++) {
+    font_test_append(line, &len, c);
+  }
+  line[len] = '\0';
+  ui_menu_add_button(MENU_TEXT, root, line);
+}
+
+// Diagnostic screen: renders every glyph in the common menu font
+// (font8x8_basic, U+0000 - U+00FF) plus a few UTF-8 samples. Text is fed
+// through the same ui_draw_text() path as the rest of the menu.
+static void show_font_test() {
+  struct menu_item *root = ui_push_menu(-1, -1);
+  unsigned int base;
+
+  ui_menu_add_button(MENU_TEXT, root, "MENU FONT TEST");
+  ui_menu_add_button(MENU_TEXT, root, "Bescii Mono  U+0000 - U+00FF");
+
+  ui_menu_add_divider(root);
+  ui_menu_add_button(MENU_TEXT, root, "ASCII 0x20 - 0x7F");
+  for (base = 0x20; base < 0x80; base += 16) {
+    font_test_row(root, base);
+  }
+
+  ui_menu_add_divider(root);
+  ui_menu_add_button(MENU_TEXT, root, "C1 controls 0x80 - 0x9F (box)");
+  for (base = 0x80; base < 0xA0; base += 16) {
+    font_test_row(root, base);
+  }
+
+  ui_menu_add_divider(root);
+  ui_menu_add_button(MENU_TEXT, root, "Latin-1 0xA0 - 0xFF");
+  for (base = 0xA0; base < 0x100; base += 16) {
+    font_test_row(root, base);
+  }
+
+  ui_menu_add_divider(root);
+  ui_menu_add_button(MENU_TEXT, root,
+                     "Sample: " "caf\xC3\xA9" " " "\xC2\xA3" "5 "
+                     "\xC2\xB1" " " "\xC2\xBD");
+  ui_menu_add_button(MENU_TEXT, root,
+                     "> U+00FF: " "\xCE\x94" " " "\xE2\x82\xAC" " box");
+  ui_menu_add_button(MENU_TEXT, root, "bad utf-8: \xFF\xFE box");
 }
 
 #ifdef BMC64_IO_STATS
@@ -3055,6 +3117,9 @@ static void menu_value_changed(struct menu_item *item) {
     return;
   case MENU_LICENSE:
     show_license();
+    return;
+  case MENU_FONT_TEST:
+    show_font_test();
     return;
 #ifdef BMC64_IO_STATS
   case MENU_IO_STATS:
