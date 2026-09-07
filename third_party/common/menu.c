@@ -157,9 +157,11 @@ static struct menu_item *network_modem_address_item;
 static struct menu_item *webui_settings_item;
 static struct menu_item *webui_enabled_item;
 static int saved_webui_enabled;
+static int webui_enabled_was_selected;
 static struct menu_item *webui_pin_item;
-static char webui_pin[16];
 static char saved_webui_pin[16];
+static int webui_pin_was_selected;
+static int webui_reboot_prompted;
 static struct menu_item *timezone_offset_item;
 static struct menu_item *wifi_settings_item;
 static struct menu_item *wifi_ssid_item;
@@ -729,8 +731,27 @@ static void main_menu_cursor_listener(struct menu_item* parent, int new_pos) {
       0, MENU_LOGGING_DESTINATION, "Yes", "No");
   }
 
+  int webui_enabled_is_selected =
+      webui_enabled_item != NULL &&
+      new_pos == webui_enabled_item->render_index;
+  int webui_pin_is_selected =
+      webui_pin_item != NULL &&
+      new_pos == webui_pin_item->render_index;
+  if (!webui_reboot_prompted &&
+      ((webui_enabled_was_selected && !webui_enabled_is_selected &&
+        webui_enabled_item->value != saved_webui_enabled) ||
+       (webui_pin_was_selected && !webui_pin_is_selected &&
+        strcmp(webui_pin_item->str_value, saved_webui_pin) != 0))) {
+    webui_reboot_prompted = 1;
+    ui_confirm_wrapped_labels("Web UI settings changed",
+        "Web UI settings have changed. You need to reboot for them to take effect. Reboot now?",
+      0, MENU_WEBUI_ENABLED, "Yes", "No");
+  }
+
   network_device_was_selected = network_device_is_selected;
     logging_destination_was_selected = logging_destination_is_selected;
+  webui_enabled_was_selected = webui_enabled_is_selected;
+  webui_pin_was_selected = webui_pin_is_selected;
 }
 
 static void show_files(DirType dir_type, FileFilter filter, int menu_id,
@@ -1428,6 +1449,7 @@ static int save_settings() {
             sizeof(saved_webui_pin) - 1);
     saved_webui_pin[sizeof(saved_webui_pin) - 1] = '\0';
   }
+  webui_reboot_prompted = 0;
   if (timezone_offset_item != NULL) {
     fprintf(fp, "timezone_offset_minutes=%d\n",
             timezone_offset_item->choice_ints[timezone_offset_item->value]);
@@ -1740,8 +1762,6 @@ static void load_settings() {
               webui_pin_item->max_length);
       webui_pin_item->str_value[webui_pin_item->max_length] = '\0';
       webui_pin_item->value = strlen(webui_pin_item->str_value);
-      strncpy(webui_pin, webui_pin_item->str_value, sizeof(webui_pin) - 1);
-      webui_pin[sizeof(webui_pin) - 1] = '\0';
       strncpy(saved_webui_pin, webui_pin_item->str_value,
               sizeof(saved_webui_pin) - 1);
       saved_webui_pin[sizeof(saved_webui_pin) - 1] = '\0';
@@ -3209,20 +3229,10 @@ static void menu_value_changed(struct menu_item *item) {
     network_reboot_prompted = 0;
     return;
   case MENU_WEBUI_ENABLED:
-    if (item->value != saved_webui_enabled) {
-      ui_confirm_wrapped_labels("Web UI setting changed",
-          "The Web UI change takes effect after a reboot. Reboot now?",
-          0, MENU_WEBUI_ENABLED, "Yes", "No");
-    }
-    return;
   case MENU_WEBUI_PIN:
-    strncpy(webui_pin, item->str_value, sizeof(webui_pin) - 1);
-    webui_pin[sizeof(webui_pin) - 1] = '\0';
-    if (strcmp(webui_pin, saved_webui_pin) != 0) {
-      ui_confirm_wrapped_labels("Web UI PIN changed",
-          "The Web UI PIN change takes effect after a reboot. Reboot now?",
-          0, MENU_WEBUI_ENABLED, "Yes", "No");
-    }
+    // The reboot prompt is raised by main_menu_cursor_listener when the
+    // cursor leaves the item, matching the Network Device / Logging flow.
+    webui_reboot_prompted = 0;
     return;
   case MENU_NETWORK_MODEM_ADDRESS:
     if (!circle_set_acia_network_address(
