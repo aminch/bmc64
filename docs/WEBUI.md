@@ -34,8 +34,8 @@ boot unless you also turn off `Web UI (reboot)` in the `Network` menu.
 Browse the SD card, and:
 
 - **Download** any file.
-- **Upload** files into the current folder. An upload overwrites an existing
-  file of the same name.
+- **Upload** files into the current folder. If a file of the same name already
+  exists you are asked to confirm before it is overwritten.
 - **Delete** a file, after a confirmation prompt.
 
 There is no rename yet. BMC64's own configuration files (`settings*.txt`,
@@ -135,7 +135,7 @@ browser side by side.
 | `GET /api/volumes` | real free / total space of the browsed folder |
 | `GET /api/fs/list` | lists a **real** local directory (see `--root`) |
 | `GET /api/fs/download` | streams the real local file |
-| `POST /api/fs/upload` | writes a real file into `--root` (same `.part`-then-rename and protected-name rules as the device) |
+| `POST /api/fs/upload` | writes a real file into `--root` (same `.part`-then-rename, protected-name, and `overwrite=1` rules as the device) |
 | `POST /api/fs/delete` | removes the real file / empty directory (same protected-name rules) |
 | `POST /api/reboot` | logs and does nothing |
 | `POST /api/webui/disable` | actually stops the dev server, like the device |

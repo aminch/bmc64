@@ -12,6 +12,7 @@ let rebooting = false;
 // current file-browser location (set by loadDir)
 let fbVol = "SD";
 let fbPath = "/";
+let fbNames = new Set(); // file names in the current folder (for overwrite checks)
 
 function fmtUptime(secs) {
   secs = Math.floor(secs || 0);
@@ -307,6 +308,7 @@ async function loadDir(path) {
     if (!!a.dir !== !!b.dir) return a.dir ? -1 : 1;
     return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
   });
+  fbNames = new Set(entries.filter((e) => !e.dir).map((e) => e.name));
 
   const tbody = $("fb-rows");
   const frag = document.createDocumentFragment();
@@ -391,11 +393,12 @@ async function deleteEntry(path, name) {
 
 // ---- upload ----
 
-function uploadOne(file) {
+function uploadOne(file, overwrite) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     const url = "/api/fs/upload?vol=" + encodeURIComponent(fbVol) +
-      "&path=" + encodeURIComponent(normPath(fbPath + "/" + file.name));
+      "&path=" + encodeURIComponent(normPath(fbPath + "/" + file.name)) +
+      (overwrite ? "&overwrite=1" : "");
     xhr.open("POST", url);
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) {
@@ -404,25 +407,58 @@ function uploadOne(file) {
       }
     };
     xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) resolve();
-      else reject(new Error("HTTP " + xhr.status + " " + (xhr.responseText || "").trim()));
+      if (xhr.status >= 200 && xhr.status < 300) { resolve(); return; }
+      const bodyText = (xhr.responseText || "").trim();
+      const err = new Error("HTTP " + xhr.status + " " + bodyText);
+      if (xhr.status === 409 && /exist/i.test(bodyText)) err.conflict = true;
+      reject(err);
     };
     xhr.onerror = () => reject(new Error("network error"));
     xhr.send(file);
   });
 }
 
+// Returns "ok" or "skipped"; throws on real failure.
+async function uploadWithRetry(file, overwrite) {
+  try {
+    await uploadOne(file, overwrite);
+    return "ok";
+  } catch (e) {
+    if (e.conflict && !overwrite) {
+      if (!confirm("“" + file.name + "” already exists here. Overwrite it?")) {
+        return "skipped";
+      }
+      await uploadOne(file, true);
+      return "ok";
+    }
+    throw e;
+  }
+}
+
 async function uploadFiles(fileList) {
   const files = Array.from(fileList || []);
   if (!files.length) return;
+
+  const clashes = files.filter((f) => fbNames.has(f.name));
+  if (clashes.length && !confirm(
+      "These file" + (clashes.length === 1 ? "" : "s") +
+      " already exist here and will be overwritten:\n\n" +
+      clashes.map((f) => f.name).join("\n") + "\n\nContinue?")) {
+    $("fb-upload").value = "";
+    return;
+  }
+  const overwriteNames = new Set(clashes.map((f) => f.name));
+
   $("fb-upload").disabled = true;
   $("fb-upload-btn").classList.add("disabled");
   $("fb-status").className = "msg";
   let done = 0;
+  let skipped = 0;
   for (const f of files) {
     try {
-      await uploadOne(f);
-      done++;
+      const result = await uploadWithRetry(f, overwriteNames.has(f.name));
+      if (result === "skipped") skipped++;
+      else done++;
     } catch (e) {
       $("fb-status").className = "msg err";
       $("fb-status").textContent = "Upload of " + f.name + " failed — " + e.message;
@@ -432,8 +468,10 @@ async function uploadFiles(fileList) {
   $("fb-upload").disabled = false;
   $("fb-upload-btn").classList.remove("disabled");
   $("fb-upload").value = "";
-  if (done === files.length) {
-    $("fb-status").textContent = "Uploaded " + done + " file" + (done === 1 ? "" : "s") + ".";
+  if (done + skipped === files.length) {
+    let msg = "Uploaded " + done + " file" + (done === 1 ? "" : "s") + ".";
+    if (skipped) msg += " Skipped " + skipped + " (not overwritten).";
+    $("fb-status").textContent = msg;
   }
   loadDir(fbPath);
 }

@@ -442,10 +442,21 @@ void WebUiFsUpload(CSocket *socket, const char *query,
     return;
   }
 
+  char overwrite[4];
+  boolean allow_overwrite =
+      webhttp::QueryParam(query, "overwrite", overwrite, sizeof(overwrite)) &&
+      overwrite[0] == '1';
+
   FILINFO existing;
-  if (f_stat(fatpath, &existing) == FR_OK && (existing.fattrib & AM_DIR)) {
-    webhttp::SendText(socket, 409, "Conflict", "target is a directory\n");
-    return;
+  if (f_stat(fatpath, &existing) == FR_OK) {
+    if (existing.fattrib & AM_DIR) {
+      webhttp::SendText(socket, 409, "Conflict", "target is a directory\n");
+      return;
+    }
+    if (!allow_overwrite) {
+      webhttp::SendText(socket, 409, "Conflict", "file exists\n");
+      return;
+    }
   }
 
   // Write to "<path>.part" and swap it into place on success, so an

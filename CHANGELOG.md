@@ -3,9 +3,9 @@
     * Off by default; requires networking to be enabled and a reboot to apply
     * http://<bmc64-ip>/ shows machine status and has a Reboot button
     * Reports SoC temperature and Raspberry Pi under-voltage / throttling state
-    * SD card file browser: download, upload, and delete files (delete asks
-      to confirm; BMC64 config files and the Wi-Fi firmware folder are
-      protected from upload and delete)
+    * SD card file browser: download, upload, and delete files (upload asks
+      before overwriting, delete asks to confirm; BMC64 config files and the
+      Wi-Fi firmware folder are protected from upload and delete)
     * "Disable Web UI" stops the server immediately without a reboot
     * Runs on the networking core only; no effect on the emulator when idle
     * No authentication yet: only enable it on a trusted network

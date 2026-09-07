@@ -269,6 +269,10 @@ class Handler(BaseHTTPRequestHandler):
         if os.path.isdir(target):
             self._drain_body()
             return self._send(409, "target is a directory\n")
+        overwrite = (q.get("overwrite") or ["0"])[0] == "1"
+        if os.path.exists(target) and not overwrite:
+            self._drain_body()
+            return self._send(409, "file exists\n")
 
         os.makedirs(os.path.dirname(target), exist_ok=True)
         tmp = target + ".part"
