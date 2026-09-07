@@ -7,8 +7,11 @@
 // scheduler keeps servicing the network stack and other tasks.
 //
 // Endpoints: GET static assets, GET /api/status, POST /api/reboot,
-// GET /api/volumes, GET /api/fs/list, GET /api/fs/download,
+// POST /api/reset, GET /api/volumes, GET /api/fs/list, GET /api/fs/download,
 // POST /api/fs/upload, POST /api/fs/delete, POST /api/webui/disable.
+//
+// When a PIN is configured, every request must carry HTTP Basic Auth
+// (Authorization: Basic base64(<user>:<pin>)); the username is ignored.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -53,6 +56,12 @@ extern "C" int circle_get_network_ip_address(char *address,
                                              unsigned int address_size);
 // BMC64 version string; single source of truth is menu.c's VERSION_STRING.
 extern "C" const char *bmc64_version_string(void);
+// Queues a "quick function" for the emulator main loop (interrupt safe;
+// see third_party/common/circle.h / ui.c).
+extern "C" void emu_quick_func_interrupt(int button_assignment);
+// BTN_ASSIGN_RESET_HARD2 from third_party/common/circle.h: hard reset the
+// emulated machine with no on-screen confirmation dialog.
+#define WEBUI_QUICKFUNC_RESET_HARD 916
 
 #define WEBUI_LOG              "webui"
 #define WEBUI_PORT             80
@@ -61,6 +70,8 @@ extern "C" const char *bmc64_version_string(void);
 #define WEBUI_RECV_TIMEOUT_US  8000000
 #define WEBUI_REQUEST_MAX      4096
 #define WEBUI_LISTEN_BACKLOG   8
+#define WEBUI_PIN_MAX          16
+#define WEBUI_AUTH_FAIL_MS     500  // slow brute-forcing a wrong PIN
 
 // CNetSubSystem is created with this name in src/viceapp.cpp.
 #define WEBUI_HOSTNAME         "bmc64"
@@ -222,6 +233,121 @@ void HandleStatus(CSocket *socket) {
 boolean s_started = FALSE;
 boolean g_webui_stop = FALSE;
 
+// HTTP Basic Auth PIN; empty means the server is open.
+char s_pin[WEBUI_PIN_MAX] = {0};
+
+int Base64Value(char c) {
+  if (c >= 'A' && c <= 'Z') return c - 'A';
+  if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+  if (c >= '0' && c <= '9') return c - '0' + 52;
+  if (c == '+') return 62;
+  if (c == '/') return 63;
+  return -1;
+}
+
+// Decode base64 src into dst (NUL-terminated). Returns length, or -1 on
+// invalid input or overflow.
+int Base64Decode(const char *src, char *dst, unsigned dst_size) {
+  unsigned out = 0;
+  int quad[4];
+  int have = 0;
+  for (const char *p = src; *p != '\0'; p++) {
+    if (*p == '=' || *p == ' ' || *p == '\r' || *p == '\n' || *p == '\t') {
+      break;
+    }
+    int v = Base64Value(*p);
+    if (v < 0) return -1;
+    quad[have++] = v;
+    if (have == 4) {
+      if (out + 3 >= dst_size) return -1;
+      dst[out++] = (char) ((quad[0] << 2) | (quad[1] >> 4));
+      dst[out++] = (char) ((quad[1] << 4) | (quad[2] >> 2));
+      dst[out++] = (char) ((quad[2] << 6) | quad[3]);
+      have = 0;
+    }
+  }
+  if (have == 2) {
+    if (out + 1 >= dst_size) return -1;
+    dst[out++] = (char) ((quad[0] << 2) | (quad[1] >> 4));
+  } else if (have == 3) {
+    if (out + 2 >= dst_size) return -1;
+    dst[out++] = (char) ((quad[0] << 2) | (quad[1] >> 4));
+    dst[out++] = (char) ((quad[1] << 4) | (quad[2] >> 2));
+  } else if (have != 0) {
+    return -1;
+  }
+  dst[out] = '\0';
+  return (int) out;
+}
+
+enum { AUTH_OK, AUTH_MISSING, AUTH_BAD };
+
+// Check HTTP Basic Auth against s_pin. Returns AUTH_OK when no PIN is
+// set, or when the request's Authorization password matches.
+int CheckAuth(const char *request) {
+  if (s_pin[0] == '\0') {
+    return AUTH_OK;
+  }
+
+  const char *p = request;
+  const char *value = 0;
+  while (*p != '\0') {
+    if (CiPrefix(p, "authorization:")) {
+      value = p + 14;
+      break;
+    }
+    const char *nl = strstr(p, "\r\n");
+    if (nl == 0) break;
+    p = nl + 2;
+  }
+  if (value == 0) {
+    return AUTH_MISSING;
+  }
+
+  while (*value == ' ' || *value == '\t') value++;
+  if (!CiPrefix(value, "basic ")) {
+    return AUTH_BAD;
+  }
+  value += 6;
+  while (*value == ' ') value++;
+
+  char decoded[128];
+  if (Base64Decode(value, decoded, sizeof(decoded)) < 0) {
+    return AUTH_BAD;
+  }
+  const char *colon = strchr(decoded, ':');
+  const char *pass = colon != 0 ? colon + 1 : decoded;
+
+  if (strlen(pass) != strlen(s_pin)) {
+    return AUTH_BAD;
+  }
+  unsigned diff = 0;
+  for (unsigned i = 0; s_pin[i] != '\0'; i++) {
+    diff |= (unsigned char) (pass[i] ^ s_pin[i]);
+  }
+  return diff == 0 ? AUTH_OK : AUTH_BAD;
+}
+
+void Send401(CSocket *socket) {
+  const char *body = "authentication required\n";
+  char header[256];
+  int n = snprintf(
+      header, sizeof(header),
+      "HTTP/1.1 401 Unauthorized\r\n"
+      "WWW-Authenticate: Basic realm=\"BMC64 Web UI - any username, PIN as "
+      "password\", charset=\"UTF-8\"\r\n"
+      "Content-Type: text/plain; charset=utf-8\r\n"
+      "Content-Length: %u\r\n"
+      "Connection: close\r\n"
+      "Cache-Control: no-store\r\n"
+      "\r\n",
+      (unsigned) strlen(body));
+  if (n > 0 && (unsigned) n < sizeof(header) &&
+      webhttp::SendAll(socket, header, (unsigned) n)) {
+    webhttp::SendAll(socket, body, (unsigned) strlen(body));
+  }
+}
+
 // Returns TRUE if a reboot was requested (caller must not touch the
 // socket afterwards; reboot() does not return).
 boolean HandleConnection(CSocket *socket) {
@@ -269,6 +395,15 @@ boolean HandleConnection(CSocket *socket) {
 
   boolean is_get = strcmp(method, "GET") == 0;
   boolean is_post = strcmp(method, "POST") == 0;
+
+  int auth = CheckAuth(request);
+  if (auth != AUTH_OK) {
+    if (auth == AUTH_BAD) {
+      CScheduler::Get()->MsSleep(WEBUI_AUTH_FAIL_MS);
+    }
+    Send401(socket);
+    return FALSE;
+  }
 
   if (is_get && strcmp(target, "/api/status") == 0) {
     HandleStatus(socket);
@@ -319,6 +454,17 @@ boolean HandleConnection(CSocket *socket) {
     CScheduler::Get()->MsSleep(250);  // give the socket time to flush
     reboot();                         // does not return
     return TRUE;
+  }
+
+  if (is_post && strcmp(target, "/api/reset") == 0) {
+    // Queued for the emulator main loop; BMC64 itself keeps running.
+    emu_quick_func_interrupt(WEBUI_QUICKFUNC_RESET_HARD);
+    const char *ok = "{\"ok\":true}";
+    SendResponse(socket, 202, "Accepted", "application/json", ok,
+                 (unsigned) strlen(ok));
+    CLogger::Get()->Write(WEBUI_LOG, LogNotice,
+                          "Hard reset requested via web UI");
+    return FALSE;
   }
 
   if (is_get) {
@@ -399,16 +545,21 @@ private:
 
 }  // namespace
 
-void WebUiStart(CNetSubSystem *network) {
+void WebUiStart(CNetSubSystem *network, const char *pin) {
   if (s_started || network == 0) {
     return;
   }
   s_started = TRUE;
+  s_pin[0] = '\0';
+  if (pin != 0) {
+    strncpy(s_pin, pin, sizeof(s_pin) - 1);
+    s_pin[sizeof(s_pin) - 1] = '\0';
+  }
   new CWebUiTask(network);  // registers itself with the scheduler
 }
 
 #else  // no Circle networking on this machine build
 
-void WebUiStart(CNetSubSystem *) {}
+void WebUiStart(CNetSubSystem *, const char *) {}
 
 #endif

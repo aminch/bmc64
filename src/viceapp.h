@@ -292,7 +292,7 @@ public:
   ViceStdioApp(const char *kernel)
     : ViceScreenApp(kernel), mUSBHCII(&mInterrupt, &mTimer, TRUE),
           mEMMC(&mInterrupt, &mTimer, &mActLED), mNetworkDevice(0),
-          mTimezoneOffsetMinutes(0), mWebUiEnabled(0),
+          mTimezoneOffsetMinutes(0), mWebUiEnabled(0), mWebUiPin{},
           mWLAN(nullptr), mNet(nullptr), mWPASupplicant(nullptr),
           mNetworkStatus(0) {}
 
@@ -329,6 +329,7 @@ protected:
   int mNetworkDevice;
   int mTimezoneOffsetMinutes;
   int mWebUiEnabled;
+  char mWebUiPin[16];
   CBcm4343Device *mWLAN;
   CNetSubSystem *mNet;
   CWPASupplicant *mWPASupplicant;

@@ -882,8 +882,9 @@ IMPORTANT : BMC64 v1.0.6 through v1.4 were not properly putting the other 3 (unu
 
   * On C64 and C128, BMC64 can serve a web page over the local network for
     machine status, reboot, and browsing / downloading / uploading / deleting
-    SD-card files. It is off by default and has no password. Enable it with
-    `Network -> Web UI (reboot)` and open `http://<bmc64-ip>/`.
+    SD-card files. It is off by default and can be protected with an optional
+    PIN. Enable it in `Network -> Web UI Settings` and open
+    `http://<bmc64-ip>/`.
   * See [WEBUI.md](WEBUI.md).
 
 # Changelog

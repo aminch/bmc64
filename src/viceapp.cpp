@@ -504,6 +504,17 @@ void ViceStdioApp::LoadNetworkDevice() {
       continue;
     }
 
+    if (strncmp(line, "webui_pin=", 10) == 0) {
+      const char *value = line + 10;
+      size_t len = strcspn(value, "\r\n");
+      if (len >= sizeof(mWebUiPin)) {
+        len = sizeof(mWebUiPin) - 1;
+      }
+      memcpy(mWebUiPin, value, len);
+      mWebUiPin[len] = '\0';
+      continue;
+    }
+
     int timezone_offset_minutes;
     if (sscanf(line, "timezone_offset_minutes=%d",
                &timezone_offset_minutes) == 1 &&
@@ -537,7 +548,7 @@ void ViceStdioApp::InitializeNetwork() {
       ViceNetworkSetSubsystem(mNet);
       StartNetworkTimeSync(mNet);
       if (mWebUiEnabled) {
-        WebUiStart(mNet);
+        WebUiStart(mNet, mWebUiPin);
       }
       SetNetworkStatus(CIRCLE_NETWORK_ETHERNET_WAITING_FOR_DHCP);
       mLogger.Write(GetKernelName(), LogNotice, "Networking: Ethernet initialized");
@@ -606,7 +617,7 @@ void ViceStdioApp::InitializeNetwork() {
   ViceNetworkSetSubsystem(mNet);
   StartNetworkTimeSync(mNet);
   if (mWebUiEnabled) {
-    WebUiStart(mNet);
+    WebUiStart(mNet, mWebUiPin);
   }
   SetNetworkStatus(CIRCLE_NETWORK_WIFI_WPA_INITIALIZING);
   mLogger.Write(GetKernelName(), LogNotice, "Networking: Wi-Fi initialized");

@@ -15,6 +15,7 @@ src/webui/assets/ changes, so you can edit and watch side by side.
 """
 
 import argparse
+import base64
 import datetime as _dt
 import json
 import os
@@ -101,20 +102,54 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, code, obj):
         self._send(code, json.dumps(obj), "application/json")
 
+    # -- auth ---------------------------------------------------------
+
+    def _check_auth(self):
+        if not ARGS.pin:
+            return True
+        hdr = self.headers.get("Authorization", "")
+        if hdr.startswith("Basic "):
+            try:
+                decoded = base64.b64decode(hdr[6:]).decode("utf-8", "replace")
+                if decoded.split(":", 1)[-1] == ARGS.pin:
+                    return True
+            except Exception:
+                pass
+        try:
+            self._drain_body()
+        except Exception:
+            pass
+        self.send_response(401)
+        self.send_header(
+            "WWW-Authenticate",
+            'Basic realm="BMC64 Web UI - any username, PIN as password"')
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+        return False
+
     # -- routing --------------------------------------------------------
 
     def do_GET(self):
-        self.route()
+        if self._check_auth():
+            self.route()
 
     def do_HEAD(self):
-        self.route()
+        if self._check_auth():
+            self.route()
 
     def do_POST(self):
+        if not self._check_auth():
+            return
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
         if path == "/api/reboot":
             self._drain_body()
             sys.stderr.write("  [mock] /api/reboot (no-op)\n")
+            return self._json(202, {"ok": True})
+        if path == "/api/reset":
+            self._drain_body()
+            sys.stderr.write("  [mock] /api/reset (no-op)\n")
             return self._json(202, {"ok": True})
         if path == "/api/webui/disable":
             self._drain_body()
@@ -329,6 +364,8 @@ def main():
                         help="folder the mock file browser serves (default: repo root)")
     parser.add_argument("--throttled", default="0x0",
                         help="mock /get_throttled bitmask, e.g. 0x50000 for past under-voltage")
+    parser.add_argument("--pin", default="",
+                        help="require this PIN via HTTP Basic Auth (like the device)")
     parser.add_argument("--no-watch", dest="watch", action="store_false",
                         help="disable browser live reload")
     ARGS = parser.parse_args()
@@ -342,6 +379,7 @@ def main():
     print("  assets : %s" % ASSET_DIR)
     print("  browse : %s" % ARGS.root)
     print("  reload : %s" % ("on" if ARGS.watch else "off"))
+    print("  pin    : %s" % (ARGS.pin if ARGS.pin else "(none)"))
     print("  open   : http://localhost:%d/" % ARGS.port)
     try:
         server.serve_forever()

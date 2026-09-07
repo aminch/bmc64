@@ -225,6 +225,7 @@ a:hover { text-decoration: underline; }
 .tile-s { font-size: 12px; color: var(--muted); }
 .tile-blue { color: var(--blue); }
 .tile-pink { color: var(--pink); }
+.tile-purple { color: var(--purple); }
 .tile-amber { color: var(--amber); }
 
 .msg { color: var(--muted); min-height: 1.3em; margin: 12px 0 0; font-size: 13px; }

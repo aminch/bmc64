@@ -115,6 +115,15 @@ async function pollStatus() {
   let ok = false;
   try {
     const r = await fetch("/api/status", { cache: "no-store" });
+    if (r.status === 401) {
+      setConn(false, "Locked");
+      $("action-msg").className = "msg err";
+      $("action-msg").textContent =
+        "Authentication required. Reload the page and enter the Web UI PIN.";
+      clearTimeout(pollTimer);
+      pollTimer = null;
+      return;
+    }
     if (!r.ok) throw new Error("HTTP " + r.status);
     const s = await r.json();
     ok = true;
@@ -183,6 +192,23 @@ async function doReboot() {
   }
   $("action-msg").textContent = "BMC64 is rebooting. This page will reconnect automatically.";
   scheduleStatus(POLL_FAIL_MS);
+}
+
+async function doHardReset() {
+  if (!confirm(
+    "Hard reset the emulated machine now?\n\n")) return;
+  $("qa-reset").disabled = true;
+  $("action-msg").className = "msg";
+  $("action-msg").textContent = "Sending hard reset…";
+  try {
+    const r = await fetch("/api/reset", { method: "POST" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    $("action-msg").textContent = "Machine reset.";
+  } catch (e) {
+    $("action-msg").className = "msg err";
+    $("action-msg").textContent = "Hard reset failed — " + e.message;
+  }
+  $("qa-reset").disabled = false;
 }
 
 async function disableWebUi() {
@@ -291,6 +317,7 @@ async function loadDir(path) {
   let data;
   try {
     const r = await fetch("/api/fs/list?path=" + encodeURIComponent(path), { cache: "no-store" });
+    if (r.status === 401) throw new Error("authentication required — reload the page and enter the PIN");
     if (!r.ok) throw new Error("HTTP " + r.status + " " + (await r.text()).trim());
     data = await r.json();
   } catch (e) {
@@ -499,6 +526,7 @@ function route() {
 
 $("qa-reboot").addEventListener("click", doReboot);
 $("nav-reboot").addEventListener("click", doReboot);
+$("qa-reset").addEventListener("click", doHardReset);
 $("qa-disable").addEventListener("click", disableWebUi);
 $("qa-files").addEventListener("click", () => { location.hash = filesHash("/"); });
 $("fb-up").addEventListener("click", () => {

@@ -2,8 +2,9 @@
 
 BMC64 can serve a web page over the local network for checking the
 machine's status and managing files on the SD card. It is **off by default**,
-has **no password**, and is available on **C64 and C128 only** (it shares the
-network stack described in [NETWORKING.md](NETWORKING.md)).
+is available on **C64 and C128 only** (it shares the network stack described in
+[NETWORKING.md](NETWORKING.md)), and can optionally be protected with a
+[PIN](#pin).
 
 The server runs on the Raspberry Pi's networking core, not the core emulation core, 
 but it is still recommended to have it disabled if not in use.
@@ -21,13 +22,19 @@ but it is still recommended to have it disabled if not in use.
 
 ### Reboot
 
-A button that restarts BMC64, equivalent to a power cycle. Any unsaved emulator
-state is lost.
+A button that restarts BMC64, equivalent to a power cycle of the Raspberry Pi.
+Any unsaved emulator state is lost.
+
+### Hard Reset
+
+Resets the emulated machine only. BMC64 itself
+keeps running. 
 
 ### Disable Web UI
 
 Stops the server immediately, **without a reboot**. It starts again on the next
-boot unless you also turn off `Web UI (reboot)` in the `Network` menu. 
+boot unless you also turn off `Web UI (reboot)` in
+`Network -> Web UI Settings`.
 
 ### Files
 
@@ -57,13 +64,30 @@ to or deleted from the web UI.
 ## Enable it
 
 1. Open `Network` and set `Network Device` to `Ethernet` or `WiFi` if you have
-   not already. The `Web UI` item is greyed out until a network device is
-   selected.
-2. Set `Web UI (reboot)` to on.
+   not already. The `Web UI Settings` folder is greyed out until a network
+   device is selected.
+2. Open `Network -> Web UI Settings` and set `Web UI (reboot)` to on.
 3. Accept the reboot prompt, or save the settings and reboot.
 
 The setting is stored as `webui_enabled=1` in `settings.txt`
 (`settings-c128.txt` on C128).
+
+## PIN
+
+The `Web UI PIN` field in `Network -> Web UI Settings` sets an access PIN. Leave
+it blank for no PIN (anyone on the network can use the page).
+
+With a PIN set, the browser shows its standard login prompt the first time you
+open the page. It uses the username **and** a password box for
+HTTP Basic authentication. BMC64 ignores the username, so type anything there and enter the PIN as the password. The PIN is remembered for the rest of the browser session.
+
+Changing the PIN needs a reboot to take effect (you are prompted). The PIN is
+stored in clear text as `webui_pin=` in `settings.txt`, so do not reuse a
+password you use elsewhere.
+
+Wrong-PIN attempts are answered after a short delay to slow guessing, but a
+short numeric PIN is still weak; treat this as "keep the household out", not
+real security.
 
 ## Open it
 
@@ -80,13 +104,15 @@ if port `80` is not available (`http://<bmc64-ip>:8080/`).
 ## Security
 
 > [!WARNING]
-> The web UI has **no authentication**. Anyone who can reach BMC64 on the
-> network can view its status, browse / download / upload / delete files on the
-> SD card, and reboot the machine.
+> Without a [PIN](#pin) the web UI has **no authentication** and anyone who can
+> reach BMC64 on the network can view its status, browse / download / upload /
+> delete files on the SD card, and reboot the machine. Even with a PIN, traffic
+> is plain HTTP on the LAN.
 >
-> Only enable it on a network you trust. Turn it off (`Network -> Web UI
-> (reboot)` off, then reboot) when you are done, or use the **Disable Web UI**
-> button to stop it until the next reboot.
+> Only enable it on a network you trust. Set a PIN. Turn it off
+> (`Network -> Web UI Settings -> Web UI (reboot)` off, then reboot) when you
+> are done, or use the **Disable Web UI** button to stop it until the next
+> reboot.
 
 ---
 
@@ -138,6 +164,7 @@ browser side by side.
 | `POST /api/fs/upload` | writes a real file into `--root` (same `.part`-then-rename, protected-name, and `overwrite=1` rules as the device) |
 | `POST /api/fs/delete` | removes the real file / empty directory (same protected-name rules) |
 | `POST /api/reboot` | logs and does nothing |
+| `POST /api/reset` | logs and does nothing |
 | `POST /api/webui/disable` | actually stops the dev server, like the device |
 
 ### Options
@@ -146,6 +173,7 @@ browser side by side.
 | --- | --- |
 | `--root <dir>` | folder the file browser reads and writes (default: the repo root). Upload / download / delete act on real files here — point it at a copy of your SD-card contents. |
 | `--throttled <hex>` | value returned as `throttled`, to exercise the power / throttling styling, e.g. `0x1` (under-voltage now), `0x8` (partial throttle), `0x50000` (under-voltage + throttled since boot) |
+| `--pin <pin>` | require this PIN via HTTP Basic Auth, like the device |
 | `--port <n>` | listen port (default `8000`) |
 | `--no-watch` | disable live reload |
 

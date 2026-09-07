@@ -27,6 +27,10 @@ class CNetSubSystem;
 // kernel/networking core, never the emulator core). Call once, after the
 // network subsystem has been created. Safe to call with a null pointer
 // and safe to call more than once; only the first call has an effect.
-void WebUiStart(CNetSubSystem *network);
+//
+// pin: optional HTTP Basic Auth PIN. When null or empty the server is
+// open; otherwise every request must carry Authorization: Basic
+// base64(<anything>:<pin>).
+void WebUiStart(CNetSubSystem *network, const char *pin);
 
 #endif

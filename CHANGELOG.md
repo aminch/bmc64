@@ -1,14 +1,10 @@
 ## 5.1.2 (pre-release)
-  * Add an optional LAN web UI (C64/C128, Network menu > "Web UI (reboot)")
-    * Off by default; requires networking to be enabled and a reboot to apply
-    * http://<bmc64-ip>/ shows machine status and has a Reboot button
+  * Add an optional LAN web UI 
+    * Active only for C64/C128 machines (default off)
     * Reports SoC temperature and Raspberry Pi under-voltage / throttling state
-    * SD card file browser: download, upload, and delete files (upload asks
-      before overwriting, delete asks to confirm; BMC64 config files and the
-      Wi-Fi firmware folder are protected from upload and delete)
+    * SD card file browser: download, upload, and delete files 
     * "Disable Web UI" stops the server immediately without a reboot
-    * Runs on the networking core only; no effect on the emulator when idle
-    * No authentication yet: only enable it on a trusted network
+    * Optional PIN ("Web UI PIN" in the same menu) gates access via HTTP Basic Auth
     * Details: [docs/WEBUI.md](docs/WEBUI.md)
 
 ## 5.1.1 (pre-release)
