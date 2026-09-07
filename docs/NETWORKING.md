@@ -127,64 +127,12 @@ After changing the file, reboot BMC64. If Wi-Fi was not already selected, set
 
 ## Web UI
 
-BMC64 can serve a small web dashboard over the local network. It is disabled by
-default and is available on C64 and C128 only, using the same network stack as
-the modem.
+BMC64 can serve a small status / reboot / file-management web page over the
+local network on C64 and C128. It is off by default and has no password.
+Enable it with `Network -> Web UI (reboot)` and open `http://<bmc64-ip>/`.
 
-### What it shows
-
-- **Dashboard**: machine and Raspberry Pi model, network status and IP address,
-  uptime, firmware version, SoC temperature, under-voltage and CPU-throttling
-  state (both current and "since boot"), and SD-card free space.
-- **Reboot**: a button that restarts BMC64.
-- **Disable Web UI**: stops the server immediately, without a reboot. It starts
-  again on the next boot unless you also turn off `Web UI (reboot)` in the
-  `Network` menu.
-- **Files**: browse the SD card, download any file, upload files into a folder,
-  and delete a file (with a confirmation prompt). Uploads overwrite an existing
-  file of the same name. There is no rename yet. BMC64's own configuration files
-  (`settings*.txt`, `wpa_supplicant.conf`, `cmdline.txt`, `config.txt`,
-  `machines.txt`, `bmc64.log`) and the `/firmware` folder cannot be uploaded to
-  or deleted from the web UI. Do not upload to or delete a disk image the
-  emulator currently has attached.
-
-The server runs on the Raspberry Pi's networking core, not the core that runs
-the emulator, so leaving it enabled has no measurable effect on emulation.
-
-### Requirements
-
-- `Network Device` set to `Ethernet` or `WiFi` and connected, so the `Network`
-  menu shows an `IP Address`.
-- A phone or computer on the same local network with a web browser.
-
-### Enable it
-
-1. Open `Network` and set `Network Device` to `Ethernet` or `WiFi` if you have
-   not already. The `Web UI` item is greyed out until a network device is
-   selected.
-2. Set `Web UI (reboot)` to on.
-3. Accept the reboot prompt, or save the settings and reboot.
-
-The setting is stored as `webui_enabled=1` in `settings.txt`
-(`settings-c128.txt` on C128).
-
-### Open it
-
-After BMC64 has rebooted and connected, browse to:
-
-```text
-http://<bmc64-ip>/
-```
-
-`<bmc64-ip>` is the address shown as `IP Address` in the `Network` menu, for
-example `http://192.168.1.42/`. The server listens on port `80`, or port `8080`
-if port `80` is not available (`http://<bmc64-ip>:8080/`).
-
-> [!WARNING]
-> The web UI has **no password**. Anyone who can reach BMC64 on the network can
-> view its status, browse and download every file on the SD card, and reboot the
-> machine. Only enable it on a network you trust, and turn it off
-> (`Network -> Web UI (reboot)` off, then reboot) when you are done.
+See **[WEBUI.md](WEBUI.md)** for the full description, security notes, and how
+to develop it locally.
 
 ## BMC Modem Commands
 

@@ -13,6 +13,7 @@
 - [Sound](USER_GUIDE.md#sound)
 - [Input & GPIO](USER_GUIDE.md#input--gpio)
 - [Networking](NETWORKING.md)
+- [Web UI](WEBUI.md)
 - [FAQ](FAQ.md)
 
 ## Development

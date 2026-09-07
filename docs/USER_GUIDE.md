@@ -59,8 +59,8 @@ This guide covers installing, configuring, and using BMC64, including machine se
   - [Logging Configuration](#logging-configuration)
   - [UART Debugging](#uart-debugging)
 - [CPU Temperature](#cpu-temperature)
-  [Networking Support](#networking-support)
-  [Web UI](#web-ui)
+- [Networking Support](#networking-support)
+- [Web UI](#web-ui)
 - [Changelog](#changelog)
 - [FAQ](#faq)
 - [Build Instructions](#build-instructions)
@@ -884,7 +884,7 @@ IMPORTANT : BMC64 v1.0.6 through v1.4 were not properly putting the other 3 (unu
     machine status, reboot, and browsing / downloading / uploading / deleting
     SD-card files. It is off by default and has no password. Enable it with
     `Network -> Web UI (reboot)` and open `http://<bmc64-ip>/`.
-    See [NETWORKING.md#web-ui](NETWORKING.md#web-ui).
+  * See [WEBUI.md](WEBUI.md).
 
 # Changelog
 
