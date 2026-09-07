@@ -6,6 +6,7 @@
     * "Disable Web UI" stops the server immediately without a reboot
     * Optional PIN ("Web UI PIN" in the same menu) gates access via HTTP Basic Auth
     * Details: [docs/WEBUI.md](docs/WEBUI.md)
+  * Switch modem default to D700 to stop cartridge clashes
 
 ## 5.1.1 (pre-release)
   * Remove FD2000 and FD4000 from bootstat code for VIC20 and PLUS/4
