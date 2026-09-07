@@ -21,7 +21,8 @@ endif
 EXTRAINCLUDE += $(APP_INCLUDES)
 
 OBJS	= src/main.o src/kernel.o src/new_io.o src/io_stats_bench.o src/vicesound.o src/vicesoundbasedevice.o src/bmcmodem.o \
-		  src/viceoptions.o src/viceapp.o src/vice_network.o src/network_time_sync.o src/fbl.o src/crt_pi_idx.o src/crt_pi_rgb.o
+		  src/viceoptions.o src/viceapp.o src/vice_network.o src/network_time_sync.o src/fbl.o src/crt_pi_idx.o src/crt_pi_rgb.o \
+		  src/webui/webui.o src/webui/webui_http.o src/webui/webui_fs.o src/webui/webui_assets.o
 
 ifeq ($(MACHINE_CLASS),RASPI_PLUS4EMU)
 OBJS	+= src/plus4emulatorcore.o
@@ -38,6 +39,22 @@ CPPFLAGS += $(APP_INCLUDES) -D $(MACHINE_CLASS) -fno-exceptions -fno-rtti
 ifeq ($(BMC64_IO_STATS),1)
 CFLAGS += -DBMC64_IO_STATS
 CPPFLAGS += -DBMC64_IO_STATS
+endif
+
+# The web UI's static assets are embedded in the image via a generated C
+# source. Regenerate it from src/webui/assets/ whenever an asset or the
+# generator changes. The generated file is committed, so builds without a
+# Python interpreter fall back to that copy.
+PYTHON ?= $(shell command -v python3 2>/dev/null || command -v python 2>/dev/null)
+WEBUI_ASSET_SRCS = $(wildcard src/webui/assets/*)
+
+src/webui/webui_assets.c: $(WEBUI_ASSET_SRCS) tools/gen_webui_assets.py
+ifeq ($(PYTHON),)
+	@echo "  WARN  no python interpreter found; using committed $@"
+	@touch $@
+else
+	@echo "  GEN   $@"
+	@$(PYTHON) tools/gen_webui_assets.py
 endif
 
 FILTERED_CIRCLE_NEWLIB = libcirclenewlib-bmc64.a

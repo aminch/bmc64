@@ -1,3 +1,12 @@
+## 5.1.2 (pre-release)
+  * Add an optional LAN web UI 
+    * Active only for C64/C128 machines (default off)
+    * Reports SoC temperature and Raspberry Pi under-voltage / throttling state
+    * SD card file browser: download, upload, and delete files 
+    * "Disable Web UI" stops the server immediately without a reboot
+    * Optional PIN ("Web UI PIN" in the same menu) gates access via HTTP Basic Auth
+    * Details: [docs/WEBUI.md](docs/WEBUI.md)
+
 ## 5.1.1 (pre-release)
   * Remove FD2000 and FD4000 from bootstat code for VIC20 and PLUS/4
   * Expose VICE REU settings for C128 machine

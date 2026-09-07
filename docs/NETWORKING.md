@@ -125,6 +125,16 @@ network={
 After changing the file, reboot BMC64. If Wi-Fi was not already selected, set
 `Network Device` to `WiFi` and reboot when prompted.
 
+## Web UI
+
+BMC64 can serve a small status / reboot / file-management web page over the
+local network on C64 and C128. It is off by default and can be protected with
+an optional PIN. Enable it in `Network -> Web UI Settings` and open
+`http://<bmc64-ip>/`.
+
+See **[WEBUI.md](WEBUI.md)** for the full description, security notes, and how
+to develop it locally.
+
 ## BMC Modem Commands
 
 The modem is attached to ACIA1. Commands are terminated with Return. The

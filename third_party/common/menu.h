@@ -385,6 +385,8 @@ typedef enum {
    MENU_WIFI_COUNTRY,
    MENU_WIFI_CONNECT,
    MENU_WIFI_CONNECT_NOW,
+   MENU_WEBUI_ENABLED,
+   MENU_WEBUI_PIN,
 
    MENU_VIC20_MEMORY_3K,
    MENU_VIC20_MEMORY_8K_2000,
@@ -692,6 +694,9 @@ extern int pot_x_high_value;
 extern int pot_x_low_value;
 extern int pot_y_high_value;
 extern int pot_y_low_value;
+
+// Returns the BMC64 version string (VERSION_STRING in menu.c).
+const char *bmc64_version_string(void);
 
 // Called at initialzation
 void build_menu(struct menu_item *root);

@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BMC64</title>
+<link rel="icon" type="image/png" href="/logo.png">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div id="app">
+  <aside class="sidebar">
+    <img class="sidebar-mark" src="/logo.png" alt="BMC64">
+    <nav class="nav">
+      <a class="nav-item" href="#/dashboard" data-view="dashboard"><span class="ni-ico">▦</span>Dashboard</a>
+      <a class="nav-item" href="#/files" data-view="files"><span class="ni-ico">▤</span>Files</a>
+      <span class="nav-item disabled"><span class="ni-ico">▢</span>System<span class="soon">soon</span></span>
+      <span class="nav-item disabled"><span class="ni-ico">♪</span>Media<span class="soon">soon</span></span>
+      <span class="nav-item disabled"><span class="ni-ico">≣</span>Logs<span class="soon">soon</span></span>
+    </nav>
+    <div class="sys-card">
+      <div class="sys-head"><span class="dot" id="sys-dot"></span><span id="sys-state">Connecting…</span></div>
+      <dl>
+        <dt>Uptime</dt><dd id="sc-uptime">—</dd>
+        <dt>IP Address</dt><dd id="sc-ip">—</dd>
+        <dt>Version</dt><dd id="sc-ver">—</dd>
+      </dl>
+    </div>
+    <div class="nav nav-bottom">
+      <button class="nav-item" id="nav-reboot"><span class="ni-ico">⟳</span>Reboot</button>
+    </div>
+    <div class="rainbow"></div>
+  </aside>
+
+  <main class="main">
+    <section class="view" id="view-dashboard">
+      <div class="welcome-row">
+        <div>
+          <img class="welcome" src="/title.png" alt="Welcome to BMC64 — Emulate, Create, Play, Explore">
+        </div>
+        <div class="motto">
+          <span>Retro computing.<br>Modern control.</span>
+          <span class="rainbow-sm"></span>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <h2><span class="c-ico">⚡</span>Quick Actions</h2>
+          <div class="tiles">
+            <button class="tile tile-blue" id="qa-files">
+              <span class="tile-ico">▤</span><span class="tile-t">Browse Files</span><span class="tile-s">SD card</span>
+            </button>
+            <button class="tile tile-pink" id="qa-reboot">
+              <span class="tile-ico">⟳</span><span class="tile-t">Reboot</span><span class="tile-s">Restart BMC64</span>
+            </button>
+            <button class="tile tile-purple" id="qa-reset">
+              <span class="tile-ico">↺</span><span class="tile-t">Hard Reset</span><span class="tile-s">Reset the C64</span>
+            </button>
+            <button class="tile tile-amber" id="qa-disable">
+              <span class="tile-ico">⏻</span><span class="tile-t">Disable Web UI</span><span class="tile-s">Stop until reboot</span>
+            </button>
+          </div>
+          <p class="msg" id="action-msg"></p>
+        </div>
+
+        <div class="card">
+          <h2><span class="c-ico">ⓘ</span>System Information</h2>
+          <dl class="kv">
+            <dt>Hostname</dt><dd id="i-host">—</dd>
+            <dt>IP Address</dt><dd id="i-ip">—</dd>
+            <dt>Machine</dt><dd id="i-machine">—</dd>
+            <dt>Model</dt><dd id="i-model">—</dd>
+            <dt>Network</dt><dd id="i-net">—</dd>
+            <dt>Firmware</dt><dd id="i-ver">—</dd>
+            <dt>Uptime</dt><dd id="i-uptime">—</dd>
+          </dl>
+        </div>
+
+        <div class="card">
+          <h2><span class="c-ico">◴</span>Hardware Status</h2>
+          <dl class="kv">
+            <dt>Under-voltage</dt><dd id="d-uv">—</dd>
+            <dt>Under-voltage since boot</dt><dd id="d-uv-boot">—</dd>
+            <dt>CPU throttled</dt><dd id="d-thr">—</dd>
+            <dt>Throttled since boot</dt><dd id="d-thr-boot">—</dd>
+          </dl>
+          <div class="meter" id="d-tempmeter" hidden>
+            <div class="meter-top"><span>SoC temperature</span><span id="d-temp">—</span></div>
+            <div class="bar"><div class="bar-fill" id="d-temp-bar"></div></div>
+          </div>
+          <div class="meter" id="d-storage" hidden>
+            <div class="meter-top"><span>SD storage</span><span id="d-storage-txt">—</span></div>
+            <div class="bar"><div class="bar-fill" id="d-storage-bar"></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="view" id="view-files" hidden>
+      <div class="card">
+        <h2><span class="c-ico">▤</span>Files</h2>
+        <div class="fb-bar">
+          <button class="btn" id="fb-up">↑ Up</button>
+          <div class="crumbs" id="fb-crumbs"></div>
+          <label class="btn" id="fb-upload-btn">Upload<input type="file" id="fb-upload" multiple hidden></label>
+          <button class="btn" id="fb-refresh" title="Refresh">⟳</button>
+        </div>
+        <p class="fb-note">Uploads write to this folder on the SD card. Don't overwrite a disk image the emulator currently has attached.</p>
+        <p class="msg" id="fb-status"></p>
+        <table class="fb-table">
+          <thead><tr><th>Name</th><th class="col-size">Size</th><th class="col-mod">Modified</th><th></th></tr></thead>
+          <tbody id="fb-rows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <span>BMC64 &nbsp;·&nbsp; Bare Metal</span>
+      <span class="rainbow-sm"></span>
+    </footer>
+  </main>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>

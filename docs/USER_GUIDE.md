@@ -59,7 +59,8 @@ This guide covers installing, configuring, and using BMC64, including machine se
   - [Logging Configuration](#logging-configuration)
   - [UART Debugging](#uart-debugging)
 - [CPU Temperature](#cpu-temperature)
-  - [Networking Support](#networking-support)
+- [Networking Support](#networking-support)
+- [Web UI](#web-ui)
 - [Changelog](#changelog)
 - [FAQ](#faq)
 - [Build Instructions](#build-instructions)
@@ -873,9 +874,18 @@ sudo putty /dev/ttyUSB0 -serial -sercfg 115200,8,n,1,N
 
 IMPORTANT : BMC64 v1.0.6 through v1.4 were not properly putting the other 3 (unused) cores to a low powered mode and was causing CPU temperatures to rise close to or beyond automatic throttling limits. The CPU temperature on a RPi 3 Model B clocked at @1.2Ghz hit 70 degrees without a heat sync.  V1.5+ should not have this issue.  If you are experiencing heat issues (thermometer icon in top right corner), please update your installation to the latest version.
 
-## Networking Support
+# Networking Support
 
   * Networking is available for C64 and C128; see [NETWORKING.md](NETWORKING.md) for setup, BBS and C64OS usage.
+
+# Web UI
+
+  * On C64 and C128, BMC64 can serve a web page over the local network for
+    machine status, reboot, and browsing / downloading / uploading / deleting
+    SD-card files. It is off by default and can be protected with an optional
+    PIN. Enable it in `Network -> Web UI Settings` and open
+    `http://<bmc64-ip>/`.
+  * See [WEBUI.md](WEBUI.md).
 
 # Changelog
 

@@ -329,6 +329,10 @@ extern "C" int circle_connect_wifi(void) {
   return stdio_app != nullptr && stdio_app->ConnectWifi();
 }
 
+extern "C" const char *circle_get_disk_volume(void) {
+  return ViceOptions::Get()->GetDiskVolume();
+}
+
 int ViceNetworkHasOnboardWifi(TMachineModel machine_model) {
   return HasOnboardWLAN(machine_model);
 }
