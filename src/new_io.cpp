@@ -296,6 +296,7 @@ void CGlueStdioSetPartitionForVolume (const char* volume, int part, unsigned int
   for (int pd = 0; pd < FF_VOLUMES; pd++) {
      if (strcmp(volume, VolumeStr[pd]) == 0) {
         VolToPart[pd].pt = part;
+        VolToPart[pd].ss = ss;
         return;
      }
   }
