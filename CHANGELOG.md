@@ -1,3 +1,7 @@
+## 5.1.3 (pre-release)
+  * Fix forced start sector partition mounting #369 
+    * Refactor of original 4.2 fix 410cd4f
+
 ## 5.1.2 (pre-release)
   * Add an optional LAN web UI 
     * Active only for C64/C128 machines (default off)
