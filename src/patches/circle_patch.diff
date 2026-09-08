@@ -71,3 +71,84 @@ diff --git a/addon/fatfs/ffconf.h b/addon/fatfs/ffconf.h
 +#define FF_USE_FASTSEEK	1
  /* This option switches fast seek feature. (0:Disable or 1:Enable) */
 
+diff --git a/addon/fatfs/ff.c b/addon/fatfs/ff.c
+index 27c7917e..3556b23e 100644
+--- a/addon/fatfs/ff.c
++++ b/addon/fatfs/ff.c
+@@ -251,9 +251,11 @@
+ #if FF_MULTI_PARTITION
+ #define LD2PD(vol) VolToPart[vol].pd	/* Get physical drive number from the mapping table */
+ #define LD2PT(vol) VolToPart[vol].pt	/* Get partition number from the mapping table (0:auto search, 1-:forced partition number) */
++#define LD2SS(vol) VolToPart[vol].ss	/* Get forced start sector from the mapping table */
+ #else
+ #define LD2PD(vol) (BYTE)(vol)	/* Each logical drive is associated with the same physical drive number */
+ #define LD2PT(vol) 0			/* Auto partition search */
++#define LD2SS(vol) 0			/* No forced start sector */
+ #endif
+ 
+ 
+@@ -3408,7 +3410,8 @@ static UINT check_fs (	/* 0:FAT/FAT32 VBR, 1:exFAT VBR, 2:Not FAT and valid BS,
+ 
+ static UINT find_volume (	/* Returns BS status found in the hosting drive */
+ 	FATFS* fs,		/* Filesystem object */
+-	UINT part		/* Partition to fined = 0:find as SFD and partitions, >0:forced partition number */
++	UINT part,		/* Partition to find = 0:find as SFD and partitions, >0:forced partition number */
++	DWORD start_sector	/* Forced start sector when part == 5 */
+ )
+ {
+ 	UINT fmt, i;
+@@ -3442,14 +3445,19 @@ static UINT find_volume (	/* Returns BS status found in the hosting drive */
+ 		return 3;	/* Not found */
+ 	}
+ #endif
+-	if (FF_MULTI_PARTITION && part > 4) return 3;	/* MBR has four primary partitions max (FatFs does not support logical partition) */
+-	for (i = 0; i < 4; i++) {		/* Load partition offset in the MBR */
+-		mbr_pt[i] = ld_32(fs->win + MBR_Table + i * SZ_PTE + PTE_StLba);
++	if (FF_MULTI_PARTITION && part == 5) {
++		/* BMC64 extension: mount a FAT volume at an explicitly supplied LBA. */
++		fmt = start_sector ? check_fs(fs, start_sector) : 3;
++	} else {
++		if (FF_MULTI_PARTITION && part > 4) return 3;	/* MBR has four primary partitions max (FatFs does not support logical partition) */
++		for (i = 0; i < 4; i++) {		/* Load partition offset in the MBR */
++			mbr_pt[i] = ld_32(fs->win + MBR_Table + i * SZ_PTE + PTE_StLba);
++		}
++		i = part ? part - 1 : 0;		/* Table index to find first */
++		do {							/* Find an FAT volume */
++			fmt = mbr_pt[i] ? check_fs(fs, mbr_pt[i]) : 3;	/* Check if the partition is FAT */
++		} while (part == 0 && fmt >= 2 && ++i < 4);
+ 	}
+-	i = part ? part - 1 : 0;		/* Table index to find first */
+-	do {							/* Find an FAT volume */
+-		fmt = mbr_pt[i] ? check_fs(fs, mbr_pt[i]) : 3;	/* Check if the partition is FAT */
+-	} while (part == 0 && fmt >= 2 && ++i < 4);
+ 	return fmt;
+ }
+ 
+@@ -3514,7 +3522,7 @@ static FRESULT mount_volume (	/* FR_OK(0): successful, !=0: an error occurred */
+ #endif
+ 
+ 	/* Find an FAT volume on the hosting drive */
+-	fmt = find_volume(fs, LD2PT(vol));
++	fmt = find_volume(fs, LD2PT(vol), LD2SS(vol));
+ 	if (fmt == 4) return FR_DISK_ERR;		/* An error occurred in the disk I/O layer */
+ 	if (fmt >= 2) return FR_NO_FILESYSTEM;	/* No FAT volume is found */
+ 	bsect = fs->winsect;					/* Volume offset in the hosting physical drive */
+@@ -7250,4 +7258,3 @@ FRESULT f_setcp (
+ 	return FR_OK;
+ }
+ #endif	/* FF_CODE_PAGE == 0 */
+-
+diff --git a/addon/fatfs/ff.h b/addon/fatfs/ff.h
+index b1bd58d8..ef585f86 100644
+--- a/addon/fatfs/ff.h
++++ b/addon/fatfs/ff.h
+@@ -115,7 +115,8 @@ typedef char TCHAR;
+ #if FF_MULTI_PARTITION		/* Multiple partition configuration */
+ typedef struct {
+ 	BYTE pd;	/* Associated physical drive */
+-	BYTE pt;	/* Associated partition (0:Auto detect, 1-4:Forced partition) */
++	BYTE pt;	/* Associated partition (0:Auto detect, 1-4:Forced partition, 5:Forced start sector) */
++	DWORD ss;	/* Forced start sector if pt == 5 */
+ } PARTITION;
+ extern PARTITION VolToPart[];	/* Volume to partition mapping table */
+ #endif
