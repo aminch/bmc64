@@ -12,7 +12,7 @@ is applied only with `--kasan`; `circle_diskio_stats_patch.diff` only with
 | Patch | Description |
 | --- | --- |
 | `circle_newlib_patch.diff` | Extends Circle's newlib glue with RAM-buffered FatFs file I/O and directory-entry compatibility updates (adds `d_type` to `struct dirent`). |
-| `circle_patch.diff` | Applies core Circle compatibility changes, including disabling `BUG_ON` assertions, accommodating a USB keyboard HID descriptor variant, and enabling FatFs `FF_USE_FASTSEEK` (used by `new_io.cpp` for streamed large disk images). |
+| `circle_patch.diff` | Applies core Circle compatibility changes, including disabling `BUG_ON` assertions, accommodating a USB keyboard HID descriptor variant, enabling FatFs `FF_USE_FASTSEEK` (used by `new_io.cpp` for streamed large disk images), and enabling FatFs `FF_MULTI_PARTITION` with a BMC64 extension for mounting a FAT volume at a forced start sector. |
 | `circle_8bitdo_keyboard_patch.diff` | Adds support for the 8BitDo Retro Keyboard, including its report translation and USB device-factory recognition. |
 | `circle_8bitdo_gamepad_patch.diff` | Adds Circle USB gamepad drivers for 8BitDo controllers, including Pro and XInput modes, rumble support, and device-factory recognition. |
 | `circle_usb_descriptor_patch.diff` | Makes USB string-descriptor reads use the descriptor's reported length, avoiding fixed-size buffer assumptions. |
