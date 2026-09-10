@@ -29,6 +29,9 @@ static const unsigned int WIFI_SCAN_DURATION_US = 4000000;
 static const unsigned int WIFI_CONNECT_TIMEOUT_US = 30000000;
 static CLoggingDevice *gLoggingDevice = nullptr;
 
+// BMC64 version string; single source of truth is menu.c's VERSION_STRING.
+extern "C" const char *bmc64_version_string(void);
+
 #if defined(RASPI_C64)
 #include "bootstat_c64.h"
 #elif defined(RASPI_C128)
@@ -204,6 +207,9 @@ bool ViceScreenApp::Initialize(void) {
       return false;
     }
   }
+
+  mLogger.Write(GetKernelName(), LogNotice, "BMC64 version %s",
+                bmc64_version_string());
 
   if (!mEmulatorCore->Init(&mViceOptions)) {
     return false;
