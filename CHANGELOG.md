@@ -1,4 +1,7 @@
-## 5.1.3 (pre-release)
+## 5.1.5 (pre-release)
+  * Add CapsLock latching for USB keyboards, and setting CapsLock LEDs
+
+## 5.1.4 (pre-release)
   * Fix forced start sector partition mounting #369 
     * Refactor of original 4.2 fix 410cd4f
 
