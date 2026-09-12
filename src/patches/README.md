@@ -19,6 +19,8 @@ is applied only with `--kasan`; `circle_diskio_stats_patch.diff` only with
 | `circle_xbox360_gamepad_patch.diff` | Adds a Circle USB driver for the Xbox 360 wireless PC receiver, including LED, rumble, report decoding, and device-factory recognition. |
 | `circle_tcpconnection_patch.diff` | Updates Circle TCP connection for BMC64's networking and stop network stalls. |
 | `circle_ethernet_patch.diff` | Tracks Ethernet PHY link state for LAN7800 and SMSC951x adapters, preventing receives while the link is down. |
+| `circle_transfer_error_patch.diff` | Stops `CUSBHIDDevice::CompletionRoutine()` from permanently ending polling of a HID report endpoint after a single non-overrun USB transfer error. |
+| `circle_dwhci_channel_patch.diff` | Fixes a silent out-of-bounds write in `CDWHCIDevice::SOFInterruptHandler()` when no DWHCI channel is free for a due transaction.Re-queues the transaction for the next frame instead. |
 | `circle_kasan_patch.diff` | Adjusts KASAN heap allocation, reallocation, and address validation for BMC64's supported Raspberry Pi targets. This patch is applied only when `make_all.sh` is run with `--kasan`. |
 | `circle_diskio_stats_patch.diff` | Adds BMC64 storage I/O instrumentation hooks (`io_stats_disk_read`/`io_stats_disk_write`) to the FatFs `diskio.cpp` glue so `disk_read`/`disk_write` counts, multi-sector sizes and latency can be measured. This patch is applied only when `make_all.sh` is run with `--io-stats` |
 

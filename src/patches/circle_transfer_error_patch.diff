@@ -1,0 +1,61 @@
+diff --git a/include/circle/usb/usbhiddevice.h b/include/circle/usb/usbhiddevice.h
+index 403c9e74..50ccdcbc 100644
+--- a/include/circle/usb/usbhiddevice.h
++++ b/include/circle/usb/usbhiddevice.h
+@@ -66,6 +66,8 @@ private:
+ 	CUSBEndpoint *m_pEndpointOut;		// interrupt out EP (optional)
+ 
+ 	u8 *m_pReportBuffer;
++
++	unsigned m_nErrorCount;		// see CompletionRoutine()
+ };
+ 
+ #endif
+diff --git a/lib/usb/usbhiddevice.cpp b/lib/usb/usbhiddevice.cpp
+index 7ca87b11..11817f45 100644
+--- a/lib/usb/usbhiddevice.cpp
++++ b/lib/usb/usbhiddevice.cpp
+@@ -25,12 +25,17 @@
+ 
+ static const char FromUSBHID[] = "usbhid";
+ 
++// Consecutive report-endpoint errors (excluding frame overrun) to tolerate
++// before giving up on that endpoint - see CompletionRoutine().
++static const unsigned MaxConsecutiveErrors = 50;
++
+ CUSBHIDDevice::CUSBHIDDevice (CUSBFunction *pFunction, unsigned nMaxReportSize)
+ :	CUSBFunction (pFunction),
+ 	m_nMaxReportSize (nMaxReportSize),
+ 	m_pReportEndpoint (0),
+ 	m_pEndpointOut (0),
+-	m_pReportBuffer (0)
++	m_pReportBuffer (0),
++	m_nErrorCount (0)
+ {
+ 	if (m_nMaxReportSize > 0)
+ 	{
+@@ -215,6 +220,8 @@ void CUSBHIDDevice::CompletionRoutine (CUSBRequest *pURB)
+ 
+ 	if (pURB->GetStatus () != 0)
+ 	{
++		m_nErrorCount = 0;
++
+ 		ReportHandler (m_pReportBuffer, pURB->GetResultLength ());
+ 	}
+ 	else
+@@ -223,9 +230,13 @@ void CUSBHIDDevice::CompletionRoutine (CUSBRequest *pURB)
+ 		{
+ 			ReportHandler (0, 0);
+ 		}
+-		else
++		else if (pURB->GetUSBError () != USBErrorFrameOverrun)
+ 		{
+-			if (pURB->GetUSBError () != USBErrorFrameOverrun)
++			// A single non-overrun error used to be treated as fatal for
++			// this endpoint. Tolerate a run of them (a composite device
++			// with several interrupt endpoints can see transient errors
++			// under scheduling contention) before finally giving up.
++			if (++m_nErrorCount >= MaxConsecutiveErrors)
+ 			{
+ 				bRestart = FALSE;
+ 			}
