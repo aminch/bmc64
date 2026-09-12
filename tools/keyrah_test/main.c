@@ -116,12 +116,15 @@ static void delay_ms_servicing_io(uint32_t ms) {
   }
 }
 
-// One visible "key was pressed and released" event, spaced out enough that
-// the host sees it as two distinct reports rather than one that never made it
-// out before being overwritten.
+// One visible "key was pressed and released" event. The hold time (between
+// press and release) needs to be longer than one host video frame period
+// (~16.7-20ms) - a host that only applies queued key events to its emulated
+// keyboard matrix once per frame can otherwise drain both the press and the
+// release in the same pass, with no emulated time between them, and never
+// see the key as having been down at all.
 static void kbd_tap(uint8_t itf, uint8_t modifier, uint8_t keycode) {
   kbd_press(itf, modifier, keycode);
-  delay_ms_servicing_io(15);
+  delay_ms_servicing_io(50);
   kbd_release(itf);
   delay_ms_servicing_io(15);
 }
