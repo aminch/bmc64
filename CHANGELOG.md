@@ -1,5 +1,8 @@
 ## 5.1.5 (pre-release)
   * Add CapsLock latching for USB keyboards, and setting CapsLock LEDs
+  * Fix USB keyboard/gamepad input silently and permanently stopping after a single transient USB error
+  * Fix a rare out-of-bounds memory write in USB channel allocation under heavy device load
+  * Fix SetLEDs on 8bitdo Retro keyboards (ensure CapsLock light works)
 
 ## 5.1.4 (pre-release)
   * Fix forced start sector partition mounting #369 
